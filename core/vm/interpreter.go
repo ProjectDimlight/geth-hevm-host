@@ -215,7 +215,7 @@ func newUint256FromLittleEndianBytes(val []byte) *uint256.Int {
 	return uint256.NewInt(0).SetBytes(tmp[:])
 }
 
-func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc uint64) {
+func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc uint64, msize uint64) {
 	contract := callContext.Contract
 
 	// ECP starts with 2 zero bytes to keep alignment
@@ -250,6 +250,25 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
 	in.net.bufOut = append(in.net.bufOut, contract.Input...)
 	in.net.conn.Write(in.net.bufOut)
 
+	// Copy Stack
+	in.net.bufOut = in.net.bufOut[:2]
+	in.net.bufOut = append(in.net.bufOut, ECP_COPY)
+	in.net.bufOut = append(in.net.bufOut, ECP_HOST)
+	in.net.bufOut = append(in.net.bufOut, ECP_STACK)
+	in.net.bufOut = append(in.net.bufOut, 0)
+	// src offset, dest offset, length
+	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, (uint32)(callContext.Stack.len()) * 32)
+
+	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, (uint32)(callContext.Stack.len()))
+
+	for callContext.Stack.len() != 0 {
+		in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, callContext.Stack.peek().Bytes())
+		callContext.Stack.pop()
+	}
+	in.net.conn.Write(in.net.bufOut)
+
 	// Copy Env
 	// op, src, dest, padding
 	in.net.bufOut = in.net.bufOut[:2]
@@ -272,13 +291,13 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
 	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.StateDB.GetBalance(contract.Address()).Bytes()) // 47 selfbalance
 	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Context.BaseFee.Bytes()) // 48 basefee
 	// 58 pc, internal, use 4f
-	in.net.bufOut = append256FromUint(in.net.bufOut, 0)// 59 msize, maintained internally
+	in.net.bufOut = append256FromUint(in.net.bufOut, msize) // 59 msize, maintained internally
 	in.net.bufOut = append256FromUint(in.net.bufOut, contract.Gas) // 5a gas, the initial gas is passed to hardware
 	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 0b
 	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 0c
 	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 0d
 	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 0e (stack size)
-	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 0f (pc)
+	in.net.bufOut = append256FromUint(in.net.bufOut, pc) // 0f (pc)
 
 	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, contract.Address().Bytes()) // 30 address
 	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 31 balance [func call]
@@ -305,7 +324,11 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
 	in.net.bufOut = append(in.net.bufOut, ECP_HOST)
 	in.net.bufOut = append(in.net.bufOut, ECP_CONTROL)
 	in.net.bufOut = append(in.net.bufOut, 0)
-	in.net.bufOut = binary.LittleEndian.AppendUint64(in.net.bufOut, pc)
+	
+	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+
 	in.net.conn.Write(in.net.bufOut)
 }
 
@@ -342,7 +365,8 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		mem     = NewMemory() // bound memory
 		stack   = newstack()  // local stack
 		pc			= uint64(0)
-		cost    uint64
+		msize		= uint64(0)
+		cost    = uint64(0)
 		callContext = &ScopeContext{
 			Memory:   mem,
 			Stack:    stack,
@@ -358,7 +382,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 	contract.Input = input
 
 	// Send request to HEVM
-	in.loadContextToHardware(callContext, pc)
+	in.loadContextToHardware(callContext, pc, msize)
 
 	// Main loop
 	// Deal with incoming requests
@@ -397,6 +421,21 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 					key := common.BytesToHash(bufIn[storageBase+offset : storageBase+offset+32])
 					value := common.BytesToHash(bufIn[storageBase+offset+32 : storageBase+offset+64])
 					in.evm.StateDB.SetState(contract.Address(), key, value)
+				}
+			} else if src == ECP_STACK {
+				num_of_items := binary.LittleEndian.Uint32(bufIn[16:20])
+				stackBase := uint32(20)
+
+				// clear current stack value
+				for stack.len() != 0 {
+					stack.pop()
+				}
+				// and accept from host
+				for i := uint32(num_of_items - 1); i >= 0; i -= 1 {
+					offset := i * 32
+					t := uint256.NewInt(0)
+					t.SetBytes(swapEndian(bufIn[stackBase + offset: stackBase + offset + 32]))
+					stack.push(t)
 				}
 			}
 		} else if opcode == ECP_SWAP {
@@ -496,17 +535,19 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		} else if opcode == ECP_END {
 			// The hardware should copy all local storage to host before calling END
 
-			// TODO: return type (stop, return, revert)
+			msize = binary.LittleEndian.Uint64(bufIn[16:24])
+			contract.Gas = binary.LittleEndian.Uint64(bufIn[24:32])
+
 			if (funccode == ECP_END_STOP) {
 				// stop
 				// do nothing
 			} else if (funccode == ECP_END_RETURN) {
 				// return
 				// copy return data to host
-				res = bufIn[16:16+length]
+				res = bufIn[32:32+length]
 			} else if (funccode == ECP_END_REVERT) {
 				// revert
-				res = bufIn[16:16+length]
+				res = bufIn[32:32+length]
 				err = ErrExecutionReverted
 			} else {
 				// selfdestruct
@@ -521,11 +562,14 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			// need to sync before call
 			// mem, stack, (storage?)
 			// carried as payload
-			// pc, cost, Contract.gas
+			// pc, msize, Contract.gas
 
 			pc = binary.LittleEndian.Uint64(bufIn[16:24])
-			cost = binary.LittleEndian.Uint64(bufIn[24:32])
-			contract.Gas = binary.LittleEndian.Uint64(bufIn[32:48])
+			msize = binary.LittleEndian.Uint64(bufIn[24:32])
+			contract.Gas = binary.LittleEndian.Uint64(bufIn[32:40])
+
+			// callGasTemp should be the call gas param in the stack
+			in.evm.callGasTemp = stack.peek().Uint64()
 			
 			var err error = nil
 			if funccode == ECP_CALL_CREATE {
@@ -548,7 +592,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 
 			// TODO: recover stack, mem, env
 			// and resume
-			in.loadContextToHardware(callContext, pc)
+			in.loadContextToHardware(callContext, pc, msize)
 
 		} else if opcode == ECP_DEBUG {
 			pc := binary.LittleEndian.Uint32(bufIn[16:20])
