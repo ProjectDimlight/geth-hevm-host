@@ -17,62 +17,63 @@
 package vm
 
 import (
+	"encoding/binary"
+	"fmt"
 	"hash"
 	"net"
-	"fmt"
-	"encoding/binary"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/holiman/uint256"
-	
-  "github.com/lunux2008/xulu"
+
+	"github.com/lunux2008/xulu"
 )
 
 const (
 	ECP_CALL_CREATE       = 0x10
-	ECP_CALL_CALL		 			= 0x11
-	ECP_CALL_CALLCODE			= 0x12
+	ECP_CALL_CALL         = 0x11
+	ECP_CALL_CALLCODE     = 0x12
 	ECP_CALL_DELEGATECALL = 0x14
-	ECP_CALL_CREATE2			= 0x15
-	ECP_CALL_STATICCALL		= 0x1a
+	ECP_CALL_CREATE2      = 0x15
+	ECP_CALL_STATICCALL   = 0x1a
 )
 
 const (
-	ECP_END_STOP					= 0x0
-	ECP_END_RETURN    		= 0x13
-	ECP_END_REVERT 				= 0x1d
-	ECP_END_SELFDESTRUCT 	= 0x1f
+	ECP_END_STOP         = 0x0
+	ECP_END_RETURN       = 0x13
+	ECP_END_REVERT       = 0x1d
+	ECP_END_SELFDESTRUCT = 0x1f
 )
 
 const (
-	ECP_QUERY_BALANCE 	  = 0x11
+	ECP_QUERY_BALANCE     = 0x11
 	ECP_QUERY_EXTCODESIZE = 0x1b
 	ECP_QUERY_EXTCODECOPY = 0x1c
 	ECP_QUERY_EXTCODEHASH = 0x1f
-	ECP_QUERY_BLOCKHASH 	= 0x0
+	ECP_QUERY_BLOCKHASH   = 0x0
 )
 
 const (
-	ECP_NONE byte = 0
-	ECP_CALL      = 1
-	ECP_COPY      = 2
-	ECP_SWAP      = 3
-	ECP_END       = 4
-	ECP_DEBUG			= 5
-	ECP_QUERY 		= 6
+	ECP_NONE  byte = 0
+	ECP_CALL       = 1
+	ECP_COPY       = 2
+	ECP_SWAP       = 3
+	ECP_END        = 4
+	ECP_DEBUG      = 5
+	ECP_QUERY      = 6
 )
 
 const (
-	ECP_CONTROL  byte = 0
-	ECP_CODE          = 1
-	ECP_CALLDATA      = 2
-	ECP_MEM           = 3
-	ECP_STORAGE       = 4
-	ECP_ENV           = 5
-	ECP_STACK 				= 6
-	ECP_HOST				  = 7
-	ECP_RETURN_DATA	  = 8
+	ECP_CONTROL     byte = 0
+	ECP_CODE             = 1
+	ECP_CALLDATA         = 2
+	ECP_MEM              = 3
+	ECP_STORAGE          = 4
+	ECP_ENV              = 5
+	ECP_STACK            = 6
+	ECP_HOST             = 7
+	ECP_RETURN_DATA      = 8
 )
 
 // Config are the configuration options for the Interpreter
@@ -104,14 +105,14 @@ type keccakState interface {
 }
 
 type Network struct {
-	conn 	 *net.UDPConn
+	conn   *net.UDPConn
 	bufIn  []byte
 	bufOut []byte
 }
 
 func NewNetwork() *Network {
-	laddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:23334")
-	raddr := net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 23333}
+	laddr, err := net.ResolveUDPAddr("udp", "192.168.1.2:23333")
+	raddr := net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 23333}
 	conn, err := net.DialUDP("udp", laddr, &raddr)
 	if err != nil {
 		fmt.Println(err)
@@ -119,8 +120,8 @@ func NewNetwork() *Network {
 	}
 
 	return &Network{
-		conn: conn,
-	  bufIn: make([]byte, 2048),
+		conn:   conn,
+		bufIn:  make([]byte, 2048),
 		bufOut: make([]byte, 0, 2048),
 	}
 }
@@ -182,6 +183,16 @@ func NewEVMInterpreter(evm *EVM, cfg Config) *EVMInterpreter {
 	}
 }
 
+func MinOf(vars ...uint32) uint32 {
+	min := vars[0]
+	for _, i := range vars {
+		if min > i {
+			min = i
+		}
+	}
+	return min
+}
+
 func append256FromUint(buf []byte, val uint64) []byte {
 	var tmp [32]byte
 	binary.LittleEndian.PutUint64(tmp[:8], val)
@@ -192,7 +203,7 @@ func swapEndian(val []byte) []byte {
 	n := len(val)
 	var tmp = make([]byte, n)
 	for i := 0; i < n; i++ {
-		tmp[n-1-i] = val[i];
+		tmp[n-1-i] = val[i]
 	}
 	return tmp
 }
@@ -201,7 +212,7 @@ func append256FromBigEndianBytes(buf []byte, val []byte) []byte {
 	var tmp [32]byte
 	n := len(val)
 	for i := 0; i < n; i++ {
-		tmp[n-1-i] = val[i];
+		tmp[n-1-i] = val[i]
 	}
 	return append(buf, tmp[:]...)
 }
@@ -210,7 +221,7 @@ func newUint256FromLittleEndianBytes(val []byte) *uint256.Int {
 	var tmp [32]byte
 	n := len(val)
 	for i := 0; i < n; i++ {
-		tmp[n-1-i] = val[i];
+		tmp[n-1-i] = val[i]
 	}
 	return uint256.NewInt(0).SetBytes(tmp[:])
 }
@@ -281,16 +292,17 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
 	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
 	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 1024)
 	// env data
-	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 40 blockhash [func call]
-	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Context.Coinbase.Bytes()) // 41 coinbase
-	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Context.Time.Bytes()) // 42 timestamp
-	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Context.BlockNumber.Bytes()) // 43 number
-	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Context.Difficulty.Bytes()) // 44 difficulty
-	in.net.bufOut = append256FromUint(in.net.bufOut, in.evm.Context.GasLimit) // 45 gaslimit
-	in.net.bufOut = append256FromUint(in.net.bufOut, 2018) // 46 chainid, 2018=dev
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)                                                               // 40 blockhash [func call]
+	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Context.Coinbase.Bytes())                       // 41 coinbase
+	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Context.Time.Bytes())                           // 42 timestamp
+	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Context.BlockNumber.Bytes())                    // 43 number
+	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Context.Difficulty.Bytes())                     // 44 difficulty
+	in.net.bufOut = append256FromUint(in.net.bufOut, in.evm.Context.GasLimit)                                         // 45 gaslimit
+	in.net.bufOut = append256FromUint(in.net.bufOut, 2018)                                                            // 46 chainid, 2018=dev
 	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.StateDB.GetBalance(contract.Address()).Bytes()) // 47 selfbalance
-	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Context.BaseFee.Bytes()) // 48 basefee
+	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Context.BaseFee.Bytes())                        // 48 basefee
 	// 58 pc, internal, use 4f
+<<<<<<< HEAD
 	in.net.bufOut = append256FromUint(in.net.bufOut, msize) // 59 msize, maintained internally
 	in.net.bufOut = append256FromUint(in.net.bufOut, contract.Gas) // 5a gas, the initial gas is passed to hardware
 	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 0b
@@ -298,24 +310,33 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
 	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 0d
 	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 0e (stack size)
 	in.net.bufOut = append256FromUint(in.net.bufOut, pc) // 0f (pc)
+=======
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)            // 59 msize, maintained internally
+	in.net.bufOut = append256FromUint(in.net.bufOut, contract.Gas) // 5a gas, the initial gas is passed to hardware
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)            // 0b
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)            // 0c
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)            // 0d
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)            // 0e (stack size)
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)            // 0f (pc)
+>>>>>>> fea50553bd95916022d7446fe9e734e81be8bf83
 
 	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, contract.Address().Bytes()) // 30 address
-	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 31 balance [func call]
-	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Origin.Bytes()) // 32 origin
-	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, contract.Caller().Bytes()) // 33 caller
-	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, contract.value.Bytes()) // 34 callvalue
-	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 35 calldataload [func call]
-	in.net.bufOut = append256FromUint(in.net.bufOut, uint64(len(contract.Input))) // 36 calldatasize
-	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 37 calldatacopy [func call]
-	in.net.bufOut = append256FromUint(in.net.bufOut, uint64(len(contract.Code))) // 38 codesize
-	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 39 codecopy [func call]
-	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.GasPrice.Bytes()) // 3a gasprice
-	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 3b extcodesize [func call]
-	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 3c extcodecopy [func call]
-	in.net.bufOut = append256FromUint(in.net.bufOut, uint64(len(in.returnData))) // 3d returndatasize
-	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 3e returndatacopy [func call]
-	in.net.bufOut = append256FromUint(in.net.bufOut, 0) // 3f extcodehash [func call]
-	
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)                                    // 31 balance [func call]
+	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Origin.Bytes())      // 32 origin
+	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, contract.Caller().Bytes())  // 33 caller
+	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, contract.value.Bytes())     // 34 callvalue
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)                                    // 35 calldataload [func call]
+	in.net.bufOut = append256FromUint(in.net.bufOut, uint64(len(contract.Input)))          // 36 calldatasize
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)                                    // 37 calldatacopy [func call]
+	in.net.bufOut = append256FromUint(in.net.bufOut, uint64(len(contract.Code)))           // 38 codesize
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)                                    // 39 codecopy [func call]
+	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.GasPrice.Bytes())    // 3a gasprice
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)                                    // 3b extcodesize [func call]
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)                                    // 3c extcodecopy [func call]
+	in.net.bufOut = append256FromUint(in.net.bufOut, uint64(len(in.returnData)))           // 3d returndatasize
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)                                    // 3e returndatacopy [func call]
+	in.net.bufOut = append256FromUint(in.net.bufOut, 0)                                    // 3f extcodehash [func call]
+
 	in.net.conn.Write(in.net.bufOut)
 
 	// Start
@@ -381,6 +402,8 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 	)
 	contract.Input = input
 
+	HEVMstart := time.Now()
+
 	// Send request to HEVM
 	in.loadContextToHardware(callContext, pc, msize)
 
@@ -398,7 +421,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		opcode := bufIn[0]
 		src := bufIn[1]
 		// bufIn[2] should always be HOST
-		funccode := bufIn[3]  // call mode
+		funccode := bufIn[3] // call mode
 		xulu.Use(funccode)
 
 		srcOffset := binary.LittleEndian.Uint32(bufIn[4:8])
@@ -408,7 +431,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		// op
 		if opcode == ECP_COPY {
 			if src == ECP_MEM {
-				if srcOffset + length > uint32(mem.Len()) {
+				if srcOffset+length > uint32(mem.Len()) {
 					mem.Resize(uint64(srcOffset + length))
 				}
 				copy(mem.store[srcOffset:], bufIn[16:16+length])
@@ -439,24 +462,10 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 				}
 			}
 		} else if opcode == ECP_SWAP {
-			if src == ECP_MEM {
-				if srcOffset + length > uint32(mem.Len()) {
-					mem.Resize(uint64(srcOffset + length))
-				}
-				// copy, then send
-				copy(mem.store[srcOffset:], bufIn[16:16+length])
-				
-				in.net.bufOut = in.net.bufOut[:2]
-				in.net.bufOut = append(in.net.bufOut, ECP_COPY)
-				in.net.bufOut = append(in.net.bufOut, ECP_HOST)
-				in.net.bufOut = append(in.net.bufOut, ECP_MEM)
-				in.net.bufOut = append(in.net.bufOut, 0)
-				in.net.bufOut = append(in.net.bufOut, mem.store[destOffset])
-				in.net.conn.Write(in.net.bufOut)
-			} else if src == ECP_STORAGE {
+			if src == ECP_STORAGE {
 				num_of_items := binary.LittleEndian.Uint32(bufIn[16:20])
 				storageBase := uint32(20)
-				 
+
 				// copy, then send
 				for i := uint32(0); i < num_of_items; i += 1 {
 					offset := i * 64
@@ -464,9 +473,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 					value := common.BytesToHash(bufIn[storageBase+offset+32 : storageBase+offset+64])
 					in.evm.StateDB.SetState(contract.Address(), key, value)
 				}
-				
-				query_base := uint32(20 + num_of_items * 64)
-				num_of_items = binary.LittleEndian.Uint32(bufIn[query_base:query_base+4])
+
+				query_base := uint32(20 + num_of_items*64)
+				num_of_items = binary.LittleEndian.Uint32(bufIn[query_base : query_base+4])
 				storageBase = query_base + 4
 
 				in.net.bufOut = in.net.bufOut[:2]
@@ -474,10 +483,10 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 				in.net.bufOut = append(in.net.bufOut, ECP_HOST)
 				in.net.bufOut = append(in.net.bufOut, ECP_STORAGE)
 				in.net.bufOut = append(in.net.bufOut, 0)
-				
+
 				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
 				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
-				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 64 * num_of_items + 4)
+				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 64*num_of_items+4)
 
 				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, num_of_items)
 
@@ -489,6 +498,30 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 					in.net.bufOut = append(in.net.bufOut, value[:]...)
 				}
 				in.net.conn.Write(in.net.bufOut)
+			} else {
+				// memory module with page size 1024
+				if src == ECP_MEM {
+					if srcOffset+length > uint32(mem.Len()) || destOffset+length > uint32(mem.Len()) {
+						mem.Resize(uint64(srcOffset + length))
+					}
+					// copy, then send
+					copy(mem.store[srcOffset:], bufIn[16:16+length])
+					in.net.bufOut = in.net.bufOut[:2]
+					in.net.bufOut = append(in.net.bufOut, ECP_COPY)
+					in.net.bufOut = append(in.net.bufOut, ECP_HOST)
+					in.net.bufOut = append(in.net.bufOut, ECP_MEM)
+					in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 1024)
+					in.net.bufOut = append(in.net.bufOut, mem.store[destOffset:destOffset+1024]...)
+					in.net.conn.Write(in.net.bufOut)
+				} else if src == ECP_CODE {
+					in.net.bufOut = in.net.bufOut[:2]
+					in.net.bufOut = append(in.net.bufOut, ECP_COPY)
+					in.net.bufOut = append(in.net.bufOut, ECP_HOST)
+					in.net.bufOut = append(in.net.bufOut, ECP_CODE)
+					in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 1024)
+					in.net.bufOut = append(in.net.bufOut, contract.Code[destOffset:MinOf(destOffset+uint32(1024), uint32(binary.Size(contract.Code)))]...)
+					in.net.conn.Write(in.net.bufOut)
+				}
 			}
 
 		} else if opcode == ECP_QUERY {
@@ -503,7 +536,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 				in.net.bufOut = append(in.net.bufOut, ECP_HOST)
 				in.net.bufOut = append(in.net.bufOut, ECP_MEM)
 				in.net.bufOut = append(in.net.bufOut, 0)
-				
+
 				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, srcOffset)
 				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, destOffset)
 				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, length)
@@ -515,18 +548,18 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 				in.net.bufOut = append(in.net.bufOut, ECP_HOST)
 				in.net.bufOut = append(in.net.bufOut, ECP_STACK)
 				in.net.bufOut = append(in.net.bufOut, 0)
-				
+
 				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
-				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0x8000)   // copy to stack data buffer
-				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 32 + 1)   // copy 32 bytes of data + 1 byte of write enable
+				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0x8000) // copy to stack data buffer
+				in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 32+1)   // copy 32 bytes of data + 1 byte of write enable
 
 				if funccode == ECP_QUERY_BALANCE {
 					in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.StateDB.GetBalance(address).Bytes())
-				}  else if funccode == ECP_QUERY_EXTCODEHASH {
+				} else if funccode == ECP_QUERY_EXTCODEHASH {
 					in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.StateDB.GetCodeHash(address).Bytes())
 				} else if funccode == ECP_QUERY_EXTCODESIZE {
 					in.net.bufOut = append256FromUint(in.net.bufOut, uint64(in.evm.StateDB.GetCodeSize(address)))
-				} else if funccode == ECP_QUERY_BLOCKHASH { 
+				} else if funccode == ECP_QUERY_BLOCKHASH {
 					in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, in.evm.Context.GetHash(binary.LittleEndian.Uint64(param[0:8])).Bytes())
 				}
 				in.net.bufOut = append(in.net.bufOut, 1)
@@ -534,20 +567,34 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 
 		} else if opcode == ECP_END {
 			// The hardware should copy all local storage to host before calling END
+<<<<<<< HEAD
 
 			msize = binary.LittleEndian.Uint64(bufIn[16:24])
 			contract.Gas = binary.LittleEndian.Uint64(bufIn[24:32])
 
 			if (funccode == ECP_END_STOP) {
+=======
+			HEVMend := time.Since(HEVMstart)
+			fmt.Printf("HEVM use %s\n", HEVMend)
+			// TODO: return type (stop, return, revert)
+			if funccode == ECP_END_STOP {
+>>>>>>> fea50553bd95916022d7446fe9e734e81be8bf83
 				// stop
 				// do nothing
-			} else if (funccode == ECP_END_RETURN) {
+			} else if funccode == ECP_END_RETURN {
 				// return
 				// copy return data to host
+<<<<<<< HEAD
 				res = bufIn[32:32+length]
 			} else if (funccode == ECP_END_REVERT) {
 				// revert
 				res = bufIn[32:32+length]
+=======
+				res = bufIn[16 : 16+length]
+			} else if funccode == ECP_END_REVERT {
+				// revert
+				res = bufIn[16 : 16+length]
+>>>>>>> fea50553bd95916022d7446fe9e734e81be8bf83
 				err = ErrExecutionReverted
 			} else {
 				// selfdestruct
@@ -565,12 +612,18 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			// pc, msize, Contract.gas
 
 			pc = binary.LittleEndian.Uint64(bufIn[16:24])
+<<<<<<< HEAD
 			msize = binary.LittleEndian.Uint64(bufIn[24:32])
 			contract.Gas = binary.LittleEndian.Uint64(bufIn[32:40])
 
 			// callGasTemp should be the call gas param in the stack
 			in.evm.callGasTemp = stack.peek().Uint64()
 			
+=======
+			cost = binary.LittleEndian.Uint64(bufIn[24:32])
+			contract.Gas = binary.LittleEndian.Uint64(bufIn[32:48])
+
+>>>>>>> fea50553bd95916022d7446fe9e734e81be8bf83
 			var err error = nil
 			if funccode == ECP_CALL_CREATE {
 				res, err = opCreate(&pc, in, callContext)
@@ -578,7 +631,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 				res, err = opCall(&pc, in, callContext)
 			} else if funccode == ECP_CALL_CALLCODE {
 				res, err = opCallCode(&pc, in, callContext)
-			}	else if funccode == ECP_CALL_DELEGATECALL {
+			} else if funccode == ECP_CALL_DELEGATECALL {
 				res, err = opDelegateCall(&pc, in, callContext)
 			} else if funccode == ECP_CALL_CREATE2 {
 				res, err = opCreate2(&pc, in, callContext)
@@ -599,9 +652,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			gas := binary.LittleEndian.Uint64(bufIn[20:28])
 			stackSize := binary.LittleEndian.Uint32(bufIn[28:32])
 			fmt.Printf("pc: %d, gas: %d\nstack <top %d>:\n", pc, gas, stackSize)
-			
+
 			for i := uint32(0); i < stackSize; i += 1 {
-				offset := i * 32 + 32
+				offset := i*32 + 32
 				fmt.Printf("  %d: %v\n", i, newUint256FromLittleEndianBytes(bufIn[offset:offset+32]).Hex())
 			}
 		}
