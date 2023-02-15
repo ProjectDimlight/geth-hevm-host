@@ -6,17 +6,17 @@ import time
 
 # UDP socket
 UDP_IP = "192.168.1.1"
-UDP_PORT = 23333
+UDP_PORT = 5001
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 # UDP debug
 def debugEVM():
-    DEBUG_MESSAGE = b'\x00\x00' + b'\x05\x07\x07\x00' + b'\x00\x00\x00\x00' + b'\x00\x00\x00\x00' + b'\x00\x00\x00\x00'
+    DEBUG_MESSAGE = b'\x05\x07\x07\x00' + b'\x00\x00\x00\x00' + b'\x00\x00\x00\x00' + b'\x00\x00\x00\x00'
     sock.sendto(DEBUG_MESSAGE, (UDP_IP, UDP_PORT))
 
 # UDP resetPC
 def resetHEVM():
-    SETPC_MESSAGE = b'\x00\x00' + b'\x02\x07\x05\x00' + b'\x00\x00\x00\x00' + b'\xE0\x01\x00\x00' + b'\x08\x00\x00\x00' + b'\x00\x00\x00\x00' + b'\x00\x00\x00\x00'
+    SETPC_MESSAGE = b'\x02\x07\x05\x00' + b'\x00\x00\x00\x00' + b'\xE0\x01\x00\x00' + b'\x08\x00\x00\x00' + b'\x00\x00\x00\x00' + b'\x00\x00\x00\x00'
     sock.sendto(SETPC_MESSAGE, (UDP_IP, UDP_PORT))
 
 # EVM codes
@@ -32,6 +32,8 @@ SSTORE  = '55'
 JUMP    = '56'
 JUMPI   = '57'
 JUMPDEST= '5b'
+PC      = '58'
+
 PUSH = {}
 for i in range(32):
     PUSH[i + 1] = hex(i + 0x60)[2:]
@@ -64,7 +66,7 @@ def PUSH_GEN(IMM_BYTE_LEN, IMM_TYPE = 'DEFAULT', defaultValue = None):
         IMM_INS += defaultValue
     elif IMM_TYPE == 'RANDOM':
         for i in range(IMM_BYTE_LEN):
-            IMM_INS += byteHexTrans(random.randint(0, 0xff))[2:]
+            IMM_INS += byteHexTrans(random.randint(0, 0xff))
     return PUSH[IMM_BYTE_LEN] + IMM_INS
 
 """
@@ -242,7 +244,7 @@ def main():
     code = benchmark[testbench]()
     os.system(".\\build\\bin\\evm --code " + code + " run")
     # reset HardwareEVM state, prepare for next execution
-    resetHEVM()
+    # resetHEVM()
     
 
 main()

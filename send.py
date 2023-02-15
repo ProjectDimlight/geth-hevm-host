@@ -2,7 +2,7 @@ import socket
 import time
 
 UDP_IP = "192.168.1.1"
-UDP_PORT = 23333
+UDP_PORT = 5001
 MESSAGE = "HELLO WORLD"
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
