@@ -220,6 +220,8 @@ def jumpBench():
     code += STOP
     return code
 
+def functional():
+    return "600160020160005560043560015560206007600f37600051600255600a600060203960205160035560005460029003600455600160026003826005555050506300114514600052600a5b60019003808053806049575160065558600755306008553360095546600a5559600b5500"
 
 """
 benchmark contains several time benchmark of HardwareEVM.
@@ -231,6 +233,7 @@ benchmark['PUSH']   = pushBench
 benchmark['ADD']    = addBench
 benchmark['STORAGEhit']     = storageHitBench
 benchmark['STORAGEmiss']    = storageMissBench
+benchmark['FUNC']    = storageMissBench
 
 def main():
     if len(sys.argv) != 2:
