@@ -498,6 +498,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 				if src == ECP_MEM {
 					if srcOffset+length > uint32(mem.Len()) || destOffset+length > uint32(mem.Len()) {
 						mem.Resize(uint64(srcOffset + length))
+						mem.Resize(uint64(destOffset + length))
 					}
 					// copy, then send
 					copy(mem.store[srcOffset:], bufIn[16:16+length])
@@ -521,6 +522,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 					in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
 					in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, destOffset)
 
+					fmt.Println("destOffset:", destOffset)
 					in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 1024)
 					in.net.bufOut = append(in.net.bufOut, contract.Code[destOffset:MinOf(destOffset+uint32(1024), uint32(binary.Size(contract.Code)))]...)
 					in.net.conn.Write(in.net.bufOut)

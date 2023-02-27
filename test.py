@@ -233,7 +233,7 @@ benchmark['PUSH']   = pushBench
 benchmark['ADD']    = addBench
 benchmark['STORAGEhit']     = storageHitBench
 benchmark['STORAGEmiss']    = storageMissBench
-benchmark['FUNC']    = storageMissBench
+benchmark['FUNC']    = functional
 
 def main():
     if len(sys.argv) != 2:
