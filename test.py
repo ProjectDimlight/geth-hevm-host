@@ -159,6 +159,7 @@ def storageHitBench():
     code += JUMPDEST
     # loop logic here
     code += PUSH_GEN(1, 'DEFAULT', '00')
+    code += SLOAD
     code += POP
     # loop logic end
     code += PUSH_GEN(1, 'DEFAULT', '01')
@@ -173,7 +174,7 @@ def storageHitBench():
 
 def storageMissBench():
     code = ""
-    loopCounter = byteHexTrans(int(1e4))
+    loopCounter = byteHexTrans(int(5))
     code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
     code += PUSH_GEN(1, 'DEFAULT', '00')
     code += JUMPDEST
@@ -184,12 +185,15 @@ def storageMissBench():
     code += PUSH_GEN(1, 'DEFAULT', '01')
     code += ADD
     # loop logic end
+    code += SWAP[1]
     code += PUSH_GEN(1, 'DEFAULT', '01')
     code += SWAP[1]
     code += SUB
-    code += DUP[1]
+    code += SWAP[1]
+    code += DUP[2]
     code += PUSH_GEN(1, 'DEFAULT', byteHexTrans(2 + 1 + len(loopCounter) // 2))
     code += JUMPI
+    code += POP
     code += POP
     code += STOP
     return code
