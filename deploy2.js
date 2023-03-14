@@ -17,4 +17,10 @@ contract = abi.new(deploy)
 
 contract.getBalance.sendTransaction(eth.coinbase, {from: eth.coinbase})
 
-contract.get.sendTransaction({from: eth.coinbase})
+contract.getBalanceInEth.sendTransaction(eth.coinbase, {from: eth.coinbase})
+
+personal.newAccount
+
+contract.sendCoin.sendTransaction("0xc1cbccfad0a8c07e8a38b5f3c828fa5711fb9078", 100, {from: eth.coinbase})
+
+contract.getBalance.sendTransaction(eth.coinbase, {from: eth.coinbase})

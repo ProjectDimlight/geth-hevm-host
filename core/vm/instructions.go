@@ -17,6 +17,7 @@
 package vm
 
 import (
+	"fmt"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -673,6 +674,13 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 
 	// Pop other call parameters.
 	addr, value, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
+
+	fmt.Printf("addr:%x\n", addr.Bytes20())
+	fmt.Printf("inOffset:%x\n", inOffset.Uint64())
+	fmt.Printf("inSize:%x\n", inSize.Uint64())
+	fmt.Printf("retOffset:%x\n", retOffset.Uint64())
+	fmt.Printf("retSize:%x\n", retSize.Uint64())
+
 	toAddr := common.Address(addr.Bytes20())
 	// Get the arguments from the memory.
 	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
