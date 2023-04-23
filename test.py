@@ -23,6 +23,7 @@ def resetHEVM():
 STOP    = '00'
 ADD     = '01'
 SUB     = '03'
+SHA3    = '20'
 POP     = '50'
 MLOAD   = '51'
 MSTORE  = '52'
@@ -33,6 +34,7 @@ JUMP    = '56'
 JUMPI   = '57'
 JUMPDEST= '5b'
 PC      = '58'
+MSIZE   = '59'
 
 PUSH = {}
 for i in range(32):
@@ -98,12 +100,13 @@ PUSH benchmark is designed with same number PUSH and POP instructions. HardwareE
 """
 def pushBench():
     code = ""
-    loopCounter = byteHexTrans(int(1e6))
+    loopCounter = byteHexTrans(int(1e5))
     code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
     code += JUMPDEST
     # loop logic here
-    code += PUSH_GEN(1, 'RANDOM')
-    code += POP
+    for i in range(1000):
+        code += PUSH_GEN(1, 'RANDOM')
+        code += POP
     # loop logic end
     code += PUSH_GEN(1, 'DEFAULT', '01')
     code += SWAP[1]
@@ -113,6 +116,7 @@ def pushBench():
     code += JUMPI
     code += POP
     code += STOP
+    print("1e8 times (PUSH, POP) operation")
     return code
 
 """
@@ -122,14 +126,15 @@ ADD benchmark is designed with (PUSH PUSH ADD POP) pairs.
 """
 def addBench():
     code = ""
-    loopCounter = byteHexTrans(int(1e6))
+    loopCounter = byteHexTrans(int(2e5))
     code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
     code += JUMPDEST
     # loop logic here
-    code += PUSH_GEN(1, 'RANDOM')
-    code += PUSH_GEN(1, 'RANDOM')
-    code += ADD
-    code += POP
+    for i in range(500):
+        code += PUSH_GEN(1, 'RANDOM')
+        code += PUSH_GEN(1, 'RANDOM')
+        code += ADD
+        code += POP
     # loop logic end
     code += PUSH_GEN(1, 'DEFAULT', '01')
     code += SWAP[1]
@@ -139,6 +144,7 @@ def addBench():
     code += JUMPI
     code += POP
     code += STOP
+    print("1e8 times (PUSH, PUSH, ADD, POP) operation")
     return code
 
 """
@@ -151,16 +157,17 @@ storageRealBench is designed with some 'warm' address and other 'cold' address. 
 """
 def storageHitBench():
     code = ""
-    loopCounter = byteHexTrans(int(1e4))
+    loopCounter = byteHexTrans(int(2e4))
     code += PUSH_GEN(1, 'DEFAULT', '01')
     code += PUSH_GEN(1, 'DEFAULT', '00')
     code += SSTORE
     code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
     code += JUMPDEST
     # loop logic here
-    code += PUSH_GEN(1, 'DEFAULT', '00')
-    code += SLOAD
-    code += POP
+    for i in range(500):
+        code += PUSH_GEN(1, 'DEFAULT', '00')
+        code += SLOAD
+        code += POP
     # loop logic end
     code += PUSH_GEN(1, 'DEFAULT', '01')
     code += SWAP[1]
@@ -170,49 +177,22 @@ def storageHitBench():
     code += JUMPI
     code += POP
     code += STOP
+    print("1e7 times (PUSH, hit-SLOAD, POP) operation")
     return code
 
 def storageMissBench():
     code = ""
-    loopCounter = byteHexTrans(int(5))
-    code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
-    code += PUSH_GEN(1, 'DEFAULT', '00')
-    code += JUMPDEST
-    # loop logic here
-    code += DUP[1]
-    code += SLOAD
-    code += POP
-    code += PUSH_GEN(1, 'DEFAULT', '01')
-    code += ADD
-    # loop logic end
-    code += SWAP[1]
-    code += PUSH_GEN(1, 'DEFAULT', '01')
-    code += SWAP[1]
-    code += SUB
-    code += SWAP[1]
-    code += DUP[2]
-    code += PUSH_GEN(1, 'DEFAULT', byteHexTrans(2 + 1 + len(loopCounter) // 2))
-    code += JUMPI
-    code += POP
-    code += POP
-    code += STOP
-    return code
-
-"""
-JUMP benchmark is used to test jump instruction : JUMP & JUMPI
-
-JUMP benchmark is designed with several JUMPDEST and JUMP instructions. HardwareEVM will execute control flow flush when jump happen. (JUMPI equals JUMP when 0, equals normal single cycle instruction otherwise)
-"""
-def jumpBench():
-    code = ""
-    loopCounter = byteHexTrans(int(1e6))
+    loopCounter = byteHexTrans(int(400))
     code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
     code += JUMPDEST
     # loop logic here
-    code += PUSH_GEN(1, 'DEFAULT', '0e')
-    code += PUSH_GEN(1, 'DEFAULT', '0a')
-    code += PUSH_GEN(1, 'DEFAULT', '0c')
-    code += (JUMP + JUMPDEST) * 3
+    for i in range(250):
+        code += PUSH_GEN(1, 'DEFAULT', '00')
+        code += SLOAD
+        code += POP
+        code += PUSH_GEN(1, 'DEFAULT', '40')
+        code += SLOAD
+        code += POP
     # loop logic end
     code += PUSH_GEN(1, 'DEFAULT', '01')
     code += SWAP[1]
@@ -222,6 +202,170 @@ def jumpBench():
     code += JUMPI
     code += POP
     code += STOP
+    print("1e5 times (PUSH, miss-SLOAD, POP) operation")
+    return code
+
+"""
+JUMP benchmark is used to test jump instruction : JUMP & JUMPI
+
+JUMP benchmark is designed with several JUMPDEST and JUMP instructions. HardwareEVM will execute control flow flush when jump happen. (JUMPI equals JUMP when 0, equals normal single cycle instruction otherwise)
+"""
+def jumpFalseBench():
+    code = ""
+    loopCounter = byteHexTrans(int(2e5))
+    code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
+    code += JUMPDEST
+    length = 1 + len(loopCounter) // 2 + 1
+    # loop logic here
+    for i in range(500):
+        code += PUSH_GEN(1, 'DEFAULT', '00')
+        code += PUSH_GEN(1, 'DEFAULT', byteHexTrans(1 + len(loopCounter) // 2))
+        code += JUMPI
+    # loop logic end
+    code += PUSH_GEN(1, 'DEFAULT', '01')
+    code += SWAP[1]
+    code += SUB
+    code += DUP[1]
+    code += PUSH_GEN(1, 'DEFAULT', byteHexTrans(1 + len(loopCounter) // 2))
+    code += JUMPI
+    code += POP
+    code += STOP
+    print("1e8 times false-JUMPI operation")
+    return code
+
+def jumpTrueBench():
+    code = ""
+    loopCounter = byteHexTrans(int(2e5))
+    code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
+    code += JUMPDEST
+    length = 1 + len(loopCounter) // 2 + 1
+    # loop logic here
+    loopTimes = 500
+    for i in range(loopTimes):
+        code += PUSH_GEN(1, 'DEFAULT', '01')
+        addr = byteHexTrans(length + loopTimes * 7 + 9 - 2 * i)
+        if len(addr) == 2:
+            addr = '00' + addr
+        code += PUSH_GEN(2, 'DEFAULT', addr)
+    addr = byteHexTrans(length + loopTimes * 7 + 9 - 2)
+    if len(addr) == 2:
+            addr = '00' + addr
+    code += PUSH_GEN(2, "DEFAULT", addr)
+    code += JUMP
+    code += JUMPDEST
+    addr = byteHexTrans(length + loopTimes * 7 + 9)
+    if len(addr) == 2:
+            addr = '00' + addr
+    code += PUSH_GEN(2, "DEFAULT", addr)
+    code += JUMP
+    for i in range(loopTimes):
+        code += JUMPDEST
+        code += JUMPI
+    code += JUMPDEST
+    # loop logic end
+    code += PUSH_GEN(1, 'DEFAULT', '01')
+    code += SWAP[1]
+    code += SUB
+    code += DUP[1]
+    code += PUSH_GEN(1, 'DEFAULT', byteHexTrans(1 + len(loopCounter) // 2))
+    code += JUMPI
+    code += POP
+    code += STOP
+    print("1e8 times true-JUMPI operation")
+    return code
+
+def hashBench():
+    code = ""
+    loopCounter = byteHexTrans(int(2e4))
+    code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
+    code += PUSH_GEN(32, 'RANDOM') + PUSH_GEN(1, 'DEFAULT', '00') + MSTORE
+    code += JUMPDEST
+    # loop logic here
+    for i in range(500):
+        code += PUSH_GEN(1, 'DEFAULT', '20')
+        code += PUSH_GEN(1, 'DEFAULT', '00')
+        code += SHA3
+        code += POP
+    # loop logic end
+    code += PUSH_GEN(1, 'DEFAULT', '01')
+    code += SWAP[1]
+    code += SUB
+    code += DUP[1]
+    code += PUSH_GEN(1, 'DEFAULT', byteHexTrans(1 + len(loopCounter) // 2 + 36))
+    code += JUMPI
+    code += POP
+    code += STOP
+    print("1e7 times (PUSH, PUSH, 32byte-SHA3, POP) operation")
+    return code
+
+def memoryHitBench():
+    code = ""
+    loopCounter = byteHexTrans(int(2e5))
+    code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
+    code += PUSH_GEN(32, 'RANDOM') + PUSH_GEN(1, 'DEFAULT', '00') + MSTORE
+    code += JUMPDEST
+    # loop logic here
+    for i in range(500):
+        code += PUSH_GEN(1, "DEFAULT", byteHexTrans(random.randint(0, 0x20)))
+        code += MLOAD
+        code += POP
+    # loop logic end
+    code += PUSH_GEN(1, 'DEFAULT', '01')
+    code += SWAP[1]
+    code += SUB
+    code += DUP[1]
+    code += PUSH_GEN(1, 'DEFAULT', byteHexTrans(1 + len(loopCounter) // 2 + 36))
+    code += JUMPI
+    code += POP
+    code += STOP
+    print("1e8 times (PUSH, MLOAD, POP) operation")
+    return code
+
+def stackBench():
+    code = ""
+    loopCounter = byteHexTrans(int(1e5))
+    code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
+    code += JUMPDEST
+    # loop logic here
+    for i in range(20):
+        code += PUSH_GEN(1, "DEFAULT", byteHexTrans(i))
+    for i in range(1000):
+        code += DUP[(i % 16) + 1]
+        code += SWAP[(i % 16) + 1]
+        code += POP
+    for i in range(20):
+        code += POP
+    # loop logic end
+    code += PUSH_GEN(1, 'DEFAULT', '01')
+    code += SWAP[1]
+    code += SUB
+    code += DUP[1]
+    code += PUSH_GEN(1, 'DEFAULT', byteHexTrans(1 + len(loopCounter) // 2))
+    code += JUMPI
+    code += POP
+    code += STOP
+    print("1e8 times (SWAP, DUP, POP) operation")
+    return code
+
+def pcBench():
+    code = ""
+    loopCounter = byteHexTrans(int(1e5))
+    code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
+    code += JUMPDEST
+    # loop logic here
+    for i in range(1000):
+        code += PC
+        code += POP
+    # loop logic end
+    code += PUSH_GEN(1, 'DEFAULT', '01')
+    code += SWAP[1]
+    code += SUB
+    code += DUP[1]
+    code += PUSH_GEN(1, 'DEFAULT', byteHexTrans(1 + len(loopCounter) // 2))
+    code += JUMPI
+    code += POP
+    code += STOP
+    print("1e8 times PC operation")
     return code
 
 def functional():
@@ -235,9 +379,15 @@ benchmark = {}
 benchmark['LOOP']   = loopBench
 benchmark['PUSH']   = pushBench
 benchmark['ADD']    = addBench
+benchmark['JUMPtrue']       = jumpTrueBench
+benchmark['JUMPfalse']      = jumpFalseBench
 benchmark['STORAGEhit']     = storageHitBench
 benchmark['STORAGEmiss']    = storageMissBench
-benchmark['FUNC']    = functional
+benchmark['MEMORYhit']      = memoryHitBench
+benchmark['FUNC']   = functional
+benchmark['HASH']   = hashBench
+benchmark['STACK']  = stackBench
+benchmark['PC']     = pcBench
 
 def main():
     if len(sys.argv) != 2:
@@ -249,9 +399,9 @@ def main():
         return
     print("Use time benchmark " + testbench)
     code = benchmark[testbench]()
-    os.system(".\\build\\bin\\evm --code " + code + " run")
-    # reset HardwareEVM state, prepare for next execution
-    # resetHEVM()
-    
+    with open("bytecode", "w") as f:
+        f.write(code)
+    # print(code)
+    os.system(".\\build\\bin\\evm --codefile " + 'bytecode' + " run")
 
 main()
