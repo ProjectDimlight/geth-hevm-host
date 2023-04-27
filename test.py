@@ -180,13 +180,13 @@ def storageHitBench():
     print("1e7 times (PUSH, hit-SLOAD, POP) operation")
     return code
 
-def storageMissBench():
+def storageMissOCMBench():
     code = ""
     loopCounter = byteHexTrans(int(400))
     code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
     code += JUMPDEST
     # loop logic here
-    for i in range(250):
+    for i in range(2):
         code += PUSH_GEN(1, 'DEFAULT', '00')
         code += SLOAD
         code += POP
@@ -201,6 +201,17 @@ def storageMissBench():
     code += PUSH_GEN(1, 'DEFAULT', byteHexTrans(1 + len(loopCounter) // 2))
     code += JUMPI
     code += POP
+    code += STOP
+    print("1e5 times (PUSH, miss-SLOAD, POP) operation")
+    return code
+
+def storageMissHostBench():
+    code = ""
+    for i in range(800):
+        index = byteHexTrans(i * 64)
+        code += PUSH_GEN(len(index) // 2, 'DEFAULT', index)
+        code += SLOAD
+        code += POP
     code += STOP
     print("1e5 times (PUSH, miss-SLOAD, POP) operation")
     return code
@@ -379,11 +390,12 @@ benchmark = {}
 benchmark['LOOP']   = loopBench
 benchmark['PUSH']   = pushBench
 benchmark['ADD']    = addBench
-benchmark['JUMPtrue']       = jumpTrueBench
-benchmark['JUMPfalse']      = jumpFalseBench
-benchmark['STORAGEhit']     = storageHitBench
-benchmark['STORAGEmiss']    = storageMissBench
-benchmark['MEMORYhit']      = memoryHitBench
+benchmark['JUMPtrue']           = jumpTrueBench
+benchmark['JUMPfalse']          = jumpFalseBench
+benchmark['STORAGEhit']         = storageHitBench
+benchmark['STORAGEmissOCM']     = storageMissOCMBench
+benchmark['STORAGEmissHost']    = storageMissHostBench
+benchmark['MEMORYhit']          = memoryHitBench
 benchmark['FUNC']   = functional
 benchmark['HASH']   = hashBench
 benchmark['STACK']  = stackBench
