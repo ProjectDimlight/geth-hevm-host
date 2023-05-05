@@ -356,7 +356,10 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
 
 	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
 	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
-	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 20)
+
+	// Send the Address again
+	in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, contract.Address().Bytes())[0:36]
 
 	in.net.conn.Write(in.net.bufOut)
 }
