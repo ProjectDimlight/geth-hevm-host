@@ -732,6 +732,38 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		err = nil // clear stop token error
 	}
 
+	// dump records
+	in.net.bufOut = in.net.bufOut[:0]
+	in.net.bufOut = append(in.net.bufOut, ECP_COPY)
+	in.net.bufOut = append(in.net.bufOut, ECP_STORAGE)
+	in.net.bufOut = append(in.net.bufOut, ECP_HOST)
+	in.net.bufOut = append(in.net.bufOut, 0)
+	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+	in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+	in.net.conn.Write(in.net.bufOut)
+
+	for {
+		_, err := in.net.conn.Read(in.net.bufIn)
+		if err != nil {
+			fmt.Println(err)
+			return nil, err
+		}
+
+		bufIn := in.net.bufIn
+		num_of_items := binary.LittleEndian.Uint32(bufIn[16:20])
+		storageBase := uint32(20)
+
+		for i := uint32(0); i < num_of_items; i += 1 {
+			offset := i * 84
+			key := common.BytesToHash(bufIn[storageBase+offset : storageBase+offset+32])
+			value := common.BytesToHash(bufIn[storageBase+offset+32 : storageBase+offset+64])
+			fmt.Println(key, ":", value)
+			in.evm.StateDB.SetState(contract.Address(), key, value)
+		}
+		break
+	}
+
 	xulu.Use(mem, cost, pcCopy, gasCopy, logged)
 
 	return res, err

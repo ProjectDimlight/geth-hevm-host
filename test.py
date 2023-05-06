@@ -182,7 +182,7 @@ def storageHitBench():
 
 def storageMissOCMBench():
     code = ""
-    loopCounter = byteHexTrans(int(400))
+    loopCounter = byteHexTrans(int(300))
     code += PUSH_GEN(len(loopCounter) // 2, 'DEFAULT', loopCounter)
     code += JUMPDEST
     # loop logic here
@@ -207,7 +207,7 @@ def storageMissOCMBench():
 
 def storageMissHostBench():
     code = ""
-    for i in range(800):
+    for i in range(600):
         index = byteHexTrans(i * 64)
         code += PUSH_GEN(len(index) // 2, 'DEFAULT', index)
         code += SLOAD
