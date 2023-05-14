@@ -148,8 +148,8 @@ var keyset *KeySet
 func NewKeySet() *KeySet {
 	if keyset == nil {
 		keyset = &KeySet{
-			aesKey: [16]byte{0x20, 0xf5, 0x92, 0xa6, 0xd8, 0x1a, 0x35, 0x4d, 0x04, 0xf9, 0x15, 0xcd, 0xba, 0x1e, 0xdd, 0xe6},
-			aesIv:  make([]byte, 0, 16)
+			aesKey: []byte{0x20, 0xf5, 0x92, 0xa6, 0xd8, 0x1a, 0x35, 0x4d, 0x04, 0xf9, 0x15, 0xcd, 0xba, 0x1e, 0xdd, 0xe6},
+			aesIv:  make([]byte, 16, 16),
 		}
 	}
 	return keyset
@@ -210,7 +210,7 @@ func NewEVMInterpreter(evm *EVM, cfg Config) *EVMInterpreter {
 		evm: evm,
 		cfg: cfg,
 		net: NewNetwork(),
-		key: NewKeySet()
+		key: NewKeySet(),
 	}
 }
 
@@ -426,7 +426,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 	// because the caches on the FPGA are usually small
 	var (
 		mem         = NewMemory() // bound memory
-		memTags     = map[uint32]bool
+		memTags       map[uint32]bool
 
 		stack       = newstack()  // local stack
 		callContext = &ScopeContext{
@@ -452,11 +452,14 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 	fmt.Println("gas input:", contract.Gas)
 
 	contract.Input = input
-	printHex(input)
 	printHex(contract.Code)
+	printHex(input)
 
-	encryptedInput, _ = encrypt(input, in.keyset.aesKey, in.keyset.aesIv)
-	encryptedCode,  _ = encrypt(contract.Code, in.keyset.aesKey, in.keyset.aesIv)
+	encryptedCode,  _ := encrypt(contract.Code, in.key.aesKey, in.key.aesIv)
+	encryptedInput, _ := encrypt(input, in.key.aesKey, in.key.aesIv)
+
+	printHex(encryptedCode)
+	printHex(encryptedInput)
 
 	HEVMstart := time.Now()
 
@@ -490,7 +493,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 				if srcOffset+length > uint32(mem.Len()) {
 					mem.Resize(uint64(srcOffset + length))
 				}
-				memTags[srcOffset >> 10] = 1
+				memTags[srcOffset >> 10] = true
 				copy(mem.store[srcOffset:], bufIn[16:16+length])
 			} else if src == ECP_STORAGE {
 				num_of_items := binary.LittleEndian.Uint32(bufIn[16:20])
@@ -570,12 +573,12 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 					if destOffset+length > uint32(mem.Len()) {
 						mem.Resize(uint64(destOffset + length))
 					}
-					memTags[srcOffset >> 10] = 1
+					memTags[srcOffset >> 10] = true
 
 					// copy, then send
 					copy(mem.store[srcOffset:], bufIn[16:16+length])
 
-					valid, ok = memTags(destOffset >> 10)
+					_, ok := memTags[destOffset >> 10]
 					in.net.bufOut = in.net.bufOut[:0]
 					if (ok) {
 						in.net.bufOut = append(in.net.bufOut, ECP_COPY)
@@ -797,7 +800,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		num_of_items := binary.LittleEndian.Uint32(bufIn[16:20])
 		storageBase := uint32(20)
 
-		decryptedStorage = decrypt(bufIn[storageBase:], in.keyset.aesKey, in.keyset.aesIv)
+		decryptedStorage, _ := decrypt(bufIn[storageBase:], in.key.aesKey, in.key.aesIv)
 
 		for i := uint32(0); i < num_of_items; i += 1 {
 			offset := i * 84

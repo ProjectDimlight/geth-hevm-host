@@ -1,10 +1,14 @@
 package vm
 
 import (
-    "crypto/rsa"
-    "math/big"
+	// "fmt"
+    "crypto/aes"
+    "crypto/cipher"
+    //"crypto/rsa"
+    //"math/big"
 )
 
+/*
 func initKey(mod []byte, exp []byte, p []byte, q []byte, d []byte) (*rsa.PrivateKey, error) {
     // Convert the byte arrays to big integers
     modInt := new(big.Int).SetBytes(mod)
@@ -25,6 +29,7 @@ func initKey(mod []byte, exp []byte, p []byte, q []byte, d []byte) (*rsa.Private
 
     return rsaKey, nil
 }
+*/
 
 func encrypt(plaintext []byte, key []byte, iv []byte) ([]byte, error) {
     block, err := aes.NewCipher(key)
@@ -32,7 +37,7 @@ func encrypt(plaintext []byte, key []byte, iv []byte) ([]byte, error) {
         return nil, err
     }
 
-    gcm, err := cipher.NewGCM(block)
+    gcm, err := cipher.NewGCMWithNonceSize(block, 16)
     if err != nil {
         return nil, err
     }
@@ -47,7 +52,7 @@ func decrypt(ciphertext []byte, key []byte, iv []byte) ([]byte, error) {
         return nil, err
     }
 
-    gcm, err := cipher.NewGCM(block)
+    gcm, err := cipher.NewGCMWithNonceSize(block, 16)
     if err != nil {
         return nil, err
     }
