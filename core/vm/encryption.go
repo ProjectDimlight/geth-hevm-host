@@ -37,12 +37,11 @@ func encrypt(plaintext []byte, key []byte, iv []byte) ([]byte, error) {
         return nil, err
     }
 
-    gcm, err := cipher.NewGCMWithNonceSize(block, 16)
-    if err != nil {
-        return nil, err
-    }
+    mode := cipher.NewCBCEncrypter(block, iv)
+    paddedPlaintext := pad(plaintext, block.BlockSize())
+    ciphertext := make([]byte, len(paddedPlaintext))
+    mode.CryptBlocks(ciphertext, paddedPlaintext)
 
-    ciphertext := gcm.Seal(nil, iv, plaintext, nil)
     return ciphertext, nil
 }
 
@@ -52,15 +51,15 @@ func decrypt(ciphertext []byte, key []byte, iv []byte) ([]byte, error) {
         return nil, err
     }
 
-    gcm, err := cipher.NewGCMWithNonceSize(block, 16)
-    if err != nil {
-        return nil, err
-    }
-
-    plaintext, err := gcm.Open(nil, iv, ciphertext, nil)
-    if err != nil {
-        return nil, err
-    }
+    mode := cipher.NewCBCDecrypter(block, iv)
+    plaintext := make([]byte, len(ciphertext))
+    mode.CryptBlocks(plaintext, ciphertext)
 
     return plaintext, nil
+}
+
+func pad(src []byte, blockSize int) []byte {
+    padding := blockSize - len(src)%blockSize
+    padtext := bytes.Repeat([]byte{byte(padding)}, padding)
+    return append(src, padtext...)
 }
