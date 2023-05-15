@@ -790,7 +790,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 	in.net.conn.Write(in.net.bufOut)
 
 	for {
-		_, err := in.net.conn.Read(in.net.bufIn)
+		n, err := in.net.conn.Read(in.net.bufIn)
 		if err != nil {
 			fmt.Println(err)
 			return nil, err
@@ -800,7 +800,10 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		num_of_items := binary.LittleEndian.Uint32(bufIn[16:20])
 		storageBase := uint32(20)
 
-		decryptedStorage, _ := decrypt(bufIn[storageBase:], in.key.aesKey, in.key.aesIv)
+		fmt.Println(n)
+		printHex(bufIn[storageBase:n])
+
+		decryptedStorage, _ := decrypt(bufIn[storageBase:n], in.key.aesKey, in.key.aesIv)
 
 		for i := uint32(0); i < num_of_items; i += 1 {
 			offset := i * 84
