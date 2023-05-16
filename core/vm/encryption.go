@@ -4,6 +4,7 @@ import (
 	// "fmt"
     "crypto/aes"
     "crypto/cipher"
+    "bytes"
     //"crypto/rsa"
     //"math/big"
 )
