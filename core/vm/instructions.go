@@ -585,7 +585,7 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	var (
 		value        = scope.Stack.pop()
 		offset, size = scope.Stack.pop(), scope.Stack.pop()
-		input        = scope.Memory.GetCopy(int64(offset.Uint64()), int64(size.Uint64()))
+		input        = sliceMemory(uint32(offset.Uint64()), uint32(size.Uint64()))
 		gas          = scope.Contract.Gas
 	)
 	if interpreter.evm.chainRules.IsEIP150 {
@@ -632,7 +632,7 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 		endowment    = scope.Stack.pop()
 		offset, size = scope.Stack.pop(), scope.Stack.pop()
 		salt         = scope.Stack.pop()
-		input        = scope.Memory.GetCopy(int64(offset.Uint64()), int64(size.Uint64()))
+		input        = sliceMemory(uint32(offset.Uint64()), uint32(size.Uint64()))
 		gas          = scope.Contract.Gas
 	)
 
@@ -675,15 +675,9 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	// Pop other call parameters.
 	addr, value, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 
-	fmt.Printf("addr:%x\n", addr.Bytes20())
-	fmt.Printf("inOffset:%x\n", inOffset.Uint64())
-	fmt.Printf("inSize:%x\n", inSize.Uint64())
-	fmt.Printf("retOffset:%x\n", retOffset.Uint64())
-	fmt.Printf("retSize:%x\n", retSize.Uint64())
-
 	toAddr := common.Address(addr.Bytes20())
 	// Get the arguments from the memory.
-	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
+	args := sliceMemory(uint32(inOffset.Uint64()), uint32(inSize.Uint64()))
 
 	if interpreter.readOnly && !value.IsZero() {
 		return nil, ErrWriteProtection
@@ -725,7 +719,7 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	addr, value, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 	toAddr := common.Address(addr.Bytes20())
 	// Get arguments from the memory.
-	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
+	args := sliceMemory(uint32(inOffset.Uint64()), uint32(inSize.Uint64()))
 
 	//TODO: use uint256.Int instead of converting with toBig()
 	var bigVal = big0
@@ -761,7 +755,7 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	addr, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 	toAddr := common.Address(addr.Bytes20())
 	// Get arguments from the memory.
-	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
+	args := sliceMemory(uint32(inOffset.Uint64()), uint32(inSize.Uint64()))
 
 	ret, returnGas, err := interpreter.evm.DelegateCall(scope.Contract, toAddr, args, gas)
 	if err != nil {
@@ -790,7 +784,7 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 	addr, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 	toAddr := common.Address(addr.Bytes20())
 	// Get arguments from the memory.
-	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
+	args := sliceMemory(uint32(inOffset.Uint64()), uint32(inSize.Uint64()))
 
 	ret, returnGas, err := interpreter.evm.StaticCall(scope.Contract, toAddr, args, gas)
 	if err != nil {
@@ -811,14 +805,14 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 
 func opReturn(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	offset, size := scope.Stack.pop(), scope.Stack.pop()
-	ret := scope.Memory.GetPtr(int64(offset.Uint64()), int64(size.Uint64()))
+	ret := sliceMemory(uint32(offset.Uint64()), uint32(size.Uint64()))
 
 	return ret, errStopToken
 }
 
 func opRevert(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	offset, size := scope.Stack.pop(), scope.Stack.pop()
-	ret := scope.Memory.GetPtr(int64(offset.Uint64()), int64(size.Uint64()))
+	ret := sliceMemory(uint32(offset.Uint64()), uint32(size.Uint64()))
 
 	interpreter.returnData = ret
 	return ret, ErrExecutionReverted
