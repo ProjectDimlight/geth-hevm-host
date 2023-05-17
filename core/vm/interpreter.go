@@ -846,11 +846,14 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
         }
     }
 
+    // debug print return value
     tmp = make([]byte, 0, 65536)
     for {
-        len = MinOf(1024, )
-        decrypt(res, in.key.aesKey)
+        l = MinOf(1024, len(res))
+        tmp = append(tmp, decrypt(res[0:l], in.key.aesKey, in.key,aesIv)...)
+        res = res[l:]
     }
+    printHex(res)
     
 
     fmt.Println(err)

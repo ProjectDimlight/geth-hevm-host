@@ -49,10 +49,13 @@ for i in range(16):
 """
 Transform a int to ByteAllign Hex.
 """
-def byteHexTrans(val):
+def byteHexTrans(val, bytes=None):
     hexString = hex(val)[2:]
     if len(hexString) & 1:
         hexString = '0' + hexString
+    if bytes != None:
+        l = len(hexString)
+        hexString = "00" * (bytes - l // 2) + hexString
     return hexString
 
 """
@@ -91,7 +94,7 @@ def loopBench():
     code += JUMPI
     code += POP
     code += STOP
-    return code
+    return code, None
 
 """
 PUSH benchmark is used to test basic instruction : PUSH & POP
@@ -117,7 +120,7 @@ def pushBench():
     code += POP
     code += STOP
     print("1e8 times (PUSH, POP) operation")
-    return code
+    return code, None
 
 """
 ADD benchmark is used to test single cycle arithmetic instruction.
@@ -145,7 +148,7 @@ def addBench():
     code += POP
     code += STOP
     print("1e8 times (PUSH, PUSH, ADD, POP) operation")
-    return code
+    return code, None
 
 """
 STORAGE benchmark is used to test storage instruction.
@@ -178,7 +181,7 @@ def storageHitBench():
     code += POP
     code += STOP
     print("1e7 times (PUSH, hit-SLOAD, POP) operation")
-    return code
+    return code, None
 
 def storageMissOCMBench():
     code = ""
@@ -203,7 +206,7 @@ def storageMissOCMBench():
     code += POP
     code += STOP
     print("1e5 times (PUSH, miss-SLOAD, POP) operation")
-    return code
+    return code, None
 
 def storageMissHostBench():
     code = ""
@@ -214,7 +217,7 @@ def storageMissHostBench():
         code += POP
     code += STOP
     print("1e5 times (PUSH, miss-SLOAD, POP) operation")
-    return code
+    return code, None
 
 """
 JUMP benchmark is used to test jump instruction : JUMP & JUMPI
@@ -242,7 +245,7 @@ def jumpFalseBench():
     code += POP
     code += STOP
     print("1e8 times false-JUMPI operation")
-    return code
+    return code, None
 
 def jumpTrueBench():
     code = ""
@@ -283,7 +286,7 @@ def jumpTrueBench():
     code += POP
     code += STOP
     print("1e8 times true-JUMPI operation")
-    return code
+    return code, None
 
 def hashBench():
     code = ""
@@ -307,7 +310,7 @@ def hashBench():
     code += POP
     code += STOP
     print("1e7 times (PUSH, PUSH, 32byte-SHA3, POP) operation")
-    return code
+    return code, None
 
 def memoryHitBench():
     code = ""
@@ -330,7 +333,7 @@ def memoryHitBench():
     code += POP
     code += STOP
     print("1e8 times (PUSH, MLOAD, POP) operation")
-    return code
+    return code, None
 
 def stackBench():
     code = ""
@@ -356,7 +359,7 @@ def stackBench():
     code += POP
     code += STOP
     print("1e8 times (SWAP, DUP, POP) operation")
-    return code
+    return code, None
 
 def pcBench():
     code = ""
@@ -377,10 +380,29 @@ def pcBench():
     code += POP
     code += STOP
     print("1e8 times PC operation")
-    return code
+    return code, None
+
+def returnBench():
+    """
+push4 10000
+push4 0
+push4 0
+calldatacopy
+
+push4 2713
+push4 5081
+return
+    """
+    code = "630000271063000000006300000000376300000a9963000013d9f3"
+    calldata = ""
+    for i in range(3000):
+        input += byteHexTrans(i, 4)
+    return code, calldata
+    
 
 def functional():
-    return "600160020160005560043560015560206007600f37600051600255600a600060203960205160035560005460029003600455600160026003826005555050506300114514600052600a5b60019003808053806049575160065558600755306008553360095546600a5559600b5500"
+    code = "600160020160005560043560015560206007600f37600051600255600a600060203960205160035560005460029003600455600160026003826005555050506300114514600052600a5b60019003808053806049575160065558600755306008553360095546600a5559600b5500"
+    return code, None
 
 """
 benchmark contains several time benchmark of HardwareEVM.
@@ -410,10 +432,12 @@ def main():
         print("input testbench is not supported")
         return
     print("Use time benchmark " + testbench)
-    code = benchmark[testbench]()
+    code, calldata = benchmark[testbench]()
     with open("bytecode", "w") as f:
         f.write(code)
-    # print(code)
-    os.system(".\\build\\bin\\evm --codefile " + 'bytecode' + " run")
+    with open("calldata", "w") as f:
+        f.write(calldata if calldata != None else "")
+
+    os.system(".\\build\\bin\\evm --codefile bytecode --inputfile calldata run")
 
 main()
