@@ -274,36 +274,32 @@ func flipStack(stack *Stack) {
 func (in *EVMInterpreter) sliceMemory(callContext *ScopeContext, offset uint32, size uint32) []byte {
     var (
         res       = make([]byte, 0, 65536)
-        memLen    = callContext.Memory.Len()
-        pageHead  = offset & (~0x3ff) 
-        len       uint32
+        memLen    = uint32(callContext.Memory.Len())
     )
 
     // get encrypted slice
-    len = MinOf(0x400, memLen - pageHead)
     in.net.bufOut = in.net.bufOut[:0]
     in.net.bufOut = append(in.net.bufOut, ECP_ICM)
-    in.net.bufOut = append(in.net.bufOut, ECO_HOST)
-    in.net.bufOut = append(in.net.bufOut, ECP_MEMORY)
+    in.net.bufOut = append(in.net.bufOut, ECP_HOST)
+    in.net.bufOut = append(in.net.bufOut, ECP_MEM)
     in.net.bufOut = append(in.net.bufOut, ICM_SLICE)
     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, offset)
-    in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, pageHead)
-    in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, len)
-    in.net.bufOut = append(in.net.bufOut, callContext.Memory.store[pageHead: pageHead + len])
+    in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+    in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, size)
     in.net.conn.Write(in.net.bufOut)
 
     // Deal with incoming requests
     for {
-        _, err := in.net.conn.Read(in.net.bufIn)
+        n, err := in.net.conn.Read(in.net.bufIn)
         if err != nil {
             fmt.Println(err)
-            return nil, err
+            return nil
         }
 
         bufIn := in.net.bufIn
 
         opcode := bufIn[0]
-        src := bufIn[1]
+        // src := bufIn[1]
         // bufIn[2] should always be HOST
         funccode := bufIn[3] // call mode
 
@@ -316,20 +312,21 @@ func (in *EVMInterpreter) sliceMemory(callContext *ScopeContext, offset uint32, 
             continue
         }
         
-        res = append(res, bufIn[16:16 + length])
+        res = append(res, bufIn[16:n]...)
+        
         if funccode == ICM_SWAP {
             // reply: the next page
-            pageHead = destOffset
-            len = MinOf(0x400, memLen - pageHead)
+            pageHead := destOffset
+            pageSize := MinOf(0x400, memLen - pageHead)
             in.net.bufOut = in.net.bufOut[:0]
             in.net.bufOut = append(in.net.bufOut, ECP_ICM)
-            in.net.bufOut = append(in.net.bufOut, ECO_HOST)
-            in.net.bufOut = append(in.net.bufOut, ECP_MEMORY)
+            in.net.bufOut = append(in.net.bufOut, ECP_HOST)
+            in.net.bufOut = append(in.net.bufOut, ECP_MEM)
             in.net.bufOut = append(in.net.bufOut, ICM_COPY)
             in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, offset)
             in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, pageHead)
-            in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, len)
-            in.net.bufOut = append(in.net.bufOut, callContext.Memory.store[pageHead: pageHead + len])
+            in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, pageSize)
+            in.net.bufOut = append(in.net.bufOut, callContext.Memory.store[pageHead: pageHead + pageSize]...)
             in.net.conn.Write(in.net.bufOut)
         } else if funccode == ICM_COPY {
             // end
@@ -502,7 +499,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
     // because the caches on the FPGA are usually small
     var (
         mem         = NewMemory() // bound memory
-        memTags       map[uint32]bool
+        memTags     = make(map[uint32]bool)
 
         stack       = newstack()  // local stack
         callContext = &ScopeContext{
@@ -531,8 +528,8 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
     printHex(contract.Code)
     printHex(input)
 
-    encryptedCode,  _ := encrypt(contract.Code, in.key.aesKey, in.key.aesIv)
-    encryptedInput, _ := encrypt(input, in.key.aesKey, in.key.aesIv)
+    encryptedCode,  _ := encryptAsPage(contract.Code, in.key.aesKey, in.key.aesIv)
+    encryptedInput, _ := encryptAsPage(input, in.key.aesKey, in.key.aesIv)
 
     printHex(encryptedCode)
     printHex(encryptedInput)
@@ -557,7 +554,6 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
         src := bufIn[1]
         // bufIn[2] should always be HOST
         funccode := bufIn[3] // call mode
-        xulu.Use(funccode)
 
         srcOffset := binary.LittleEndian.Uint32(bufIn[4:8])
         destOffset := binary.LittleEndian.Uint32(bufIn[8:12])
@@ -643,24 +639,24 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
             } else {
                 // memory module with page size 1024
                 if src == ECP_MEM {
-                    if srcOffset+length > uint32(mem.Len()) {
-                        mem.Resize(uint64(srcOffset + length))
+                    if funccode == 1 {
+                        if srcOffset+length > uint32(mem.Len()) {
+                            mem.Resize(uint64(srcOffset + length))
+                        }
+                        memTags[srcOffset >> 10] = true
+                        copy(mem.store[srcOffset:], bufIn[16:16+length])
                     }
                     if destOffset+length > uint32(mem.Len()) {
                         mem.Resize(uint64(destOffset + length))
                     }
-                    memTags[srcOffset >> 10] = true
 
-                    // copy, then send
-                    copy(mem.store[srcOffset:], bufIn[16:16+length])
-
-                    _, ok := memTags[destOffset >> 10]
+                    value, ok := memTags[destOffset >> 10]
                     in.net.bufOut = in.net.bufOut[:0]
-                    if (ok) {
+                    if (ok && value) {
                         in.net.bufOut = append(in.net.bufOut, ECP_COPY)
                         in.net.bufOut = append(in.net.bufOut, ECP_HOST)
                         in.net.bufOut = append(in.net.bufOut, ECP_MEM)
-                        in.net.bufOut = append(in.net.bufOut, 0)
+                        in.net.bufOut = append(in.net.bufOut, 1)
                         in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
                         in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, destOffset)
                         in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 1024)
@@ -669,7 +665,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
                         in.net.bufOut = append(in.net.bufOut, ECP_COPY)
                         in.net.bufOut = append(in.net.bufOut, ECP_HOST)
                         in.net.bufOut = append(in.net.bufOut, ECP_MEM)
-                        in.net.bufOut = append(in.net.bufOut, 1)
+                        in.net.bufOut = append(in.net.bufOut, 0)
                         in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
                         in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, destOffset)
                         in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
@@ -847,13 +843,10 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
     }
 
     // debug print return value
-    tmp = make([]byte, 0, 65536)
-    for {
-        l = MinOf(1024, len(res))
-        tmp = append(tmp, decrypt(res[0:l], in.key.aesKey, in.key,aesIv)...)
-        res = res[l:]
+    if res != nil {
+        resPlain, _ := decryptAsPage(res, in.key.aesKey, in.key.aesIv)
+        printHex(resPlain)
     }
-    printHex(res)
     
 
     fmt.Println(err)
@@ -884,9 +877,6 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
         bufIn := in.net.bufIn
         num_of_items := binary.LittleEndian.Uint32(bufIn[16:20])
         storageBase := uint32(20)
-
-		fmt.Println(n)
-		printHex(bufIn[storageBase:n])
 
 		decryptedStorage, _ := decrypt(bufIn[storageBase:n], in.key.aesKey, in.key.aesIv)
 

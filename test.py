@@ -396,7 +396,7 @@ return
     code = "630000271063000000006300000000376300000a9963000013d9f3"
     calldata = ""
     for i in range(3000):
-        input += byteHexTrans(i, 4)
+        calldata += byteHexTrans(i, 4)
     return code, calldata
     
 
@@ -409,19 +409,21 @@ benchmark contains several time benchmark of HardwareEVM.
 The total time is sum of 'HardEVM execution time' + 'communication overhead'(related to code size and data migration).
 """
 benchmark = {}
-benchmark['LOOP']   = loopBench
-benchmark['PUSH']   = pushBench
-benchmark['ADD']    = addBench
+benchmark['LOOP']               = loopBench
+benchmark['PUSH']               = pushBench
+benchmark['ADD']                = addBench
 benchmark['JUMPtrue']           = jumpTrueBench
 benchmark['JUMPfalse']          = jumpFalseBench
 benchmark['STORAGEhit']         = storageHitBench
 benchmark['STORAGEmissOCM']     = storageMissOCMBench
 benchmark['STORAGEmissHost']    = storageMissHostBench
 benchmark['MEMORYhit']          = memoryHitBench
-benchmark['FUNC']   = functional
-benchmark['HASH']   = hashBench
-benchmark['STACK']  = stackBench
-benchmark['PC']     = pcBench
+benchmark['FUNC']               = functional
+benchmark['HASH']               = hashBench
+benchmark['STACK']              = stackBench
+benchmark['PC']                 = pcBench
+benchmark['RETURN']             = returnBench
+
 
 def main():
     if len(sys.argv) != 2:

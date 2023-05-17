@@ -17,7 +17,7 @@
 package vm
 
 import (
-	"fmt"
+	// "fmt"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -583,10 +583,10 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 		return nil, ErrWriteProtection
 	}
 	var (
-		value        = scope.Stack.pop()
-		offset, size = scope.Stack.pop(), scope.Stack.pop()
-		input        = sliceMemory(uint32(offset.Uint64()), uint32(size.Uint64()))
-		gas          = scope.Contract.Gas
+		value        	= scope.Stack.pop()
+		offset, size 	= scope.Stack.pop(), scope.Stack.pop()
+		input           = interpreter.sliceMemory(scope, uint32(offset.Uint64()), uint32(size.Uint64()))
+		gas          	= scope.Contract.Gas
 	)
 	if interpreter.evm.chainRules.IsEIP150 {
 		gas -= gas / 64
@@ -629,11 +629,11 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 		return nil, ErrWriteProtection
 	}
 	var (
-		endowment    = scope.Stack.pop()
-		offset, size = scope.Stack.pop(), scope.Stack.pop()
-		salt         = scope.Stack.pop()
-		input        = sliceMemory(uint32(offset.Uint64()), uint32(size.Uint64()))
-		gas          = scope.Contract.Gas
+		endowment    	= scope.Stack.pop()
+		offset, size 	= scope.Stack.pop(), scope.Stack.pop()
+		salt         	= scope.Stack.pop()
+		input           = interpreter.sliceMemory(scope, uint32(offset.Uint64()), uint32(size.Uint64()))
+		gas          	= scope.Contract.Gas
 	)
 
 	// Apply EIP150
@@ -677,7 +677,7 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 
 	toAddr := common.Address(addr.Bytes20())
 	// Get the arguments from the memory.
-	args := sliceMemory(uint32(inOffset.Uint64()), uint32(inSize.Uint64()))
+	args := interpreter.sliceMemory(scope, uint32(inOffset.Uint64()), uint32(inSize.Uint64()))
 
 	if interpreter.readOnly && !value.IsZero() {
 		return nil, ErrWriteProtection
@@ -719,7 +719,7 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	addr, value, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 	toAddr := common.Address(addr.Bytes20())
 	// Get arguments from the memory.
-	args := sliceMemory(uint32(inOffset.Uint64()), uint32(inSize.Uint64()))
+	args := interpreter.sliceMemory(scope, uint32(inOffset.Uint64()), uint32(inSize.Uint64()))
 
 	//TODO: use uint256.Int instead of converting with toBig()
 	var bigVal = big0
@@ -755,7 +755,7 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	addr, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 	toAddr := common.Address(addr.Bytes20())
 	// Get arguments from the memory.
-	args := sliceMemory(uint32(inOffset.Uint64()), uint32(inSize.Uint64()))
+	args := interpreter.sliceMemory(scope, uint32(inOffset.Uint64()), uint32(inSize.Uint64()))
 
 	ret, returnGas, err := interpreter.evm.DelegateCall(scope.Contract, toAddr, args, gas)
 	if err != nil {
@@ -784,7 +784,7 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 	addr, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 	toAddr := common.Address(addr.Bytes20())
 	// Get arguments from the memory.
-	args := sliceMemory(uint32(inOffset.Uint64()), uint32(inSize.Uint64()))
+	args := interpreter.sliceMemory(scope, uint32(inOffset.Uint64()), uint32(inSize.Uint64()))
 
 	ret, returnGas, err := interpreter.evm.StaticCall(scope.Contract, toAddr, args, gas)
 	if err != nil {
@@ -805,14 +805,14 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 
 func opReturn(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	offset, size := scope.Stack.pop(), scope.Stack.pop()
-	ret := sliceMemory(uint32(offset.Uint64()), uint32(size.Uint64()))
+	ret := interpreter.sliceMemory(scope, uint32(offset.Uint64()), uint32(size.Uint64()))
 
 	return ret, errStopToken
 }
 
 func opRevert(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	offset, size := scope.Stack.pop(), scope.Stack.pop()
-	ret := sliceMemory(uint32(offset.Uint64()), uint32(size.Uint64()))
+	ret := interpreter.sliceMemory(scope, uint32(offset.Uint64()), uint32(size.Uint64()))
 
 	interpreter.returnData = ret
 	return ret, ErrExecutionReverted
