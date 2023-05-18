@@ -53,10 +53,11 @@ func decrypt(ciphertext []byte, key []byte, iv []byte) ([]byte, error) {
     }
 
     mode := cipher.NewCBCDecrypter(block, iv)
-    plaintext := make([]byte, len(ciphertext))
-    mode.CryptBlocks(plaintext, ciphertext)
+    extendedCiphertext := extend(ciphertext, block.BlockSize())
+    plaintext := make([]byte, len(extendedCiphertext))
+    mode.CryptBlocks(plaintext, extendedCiphertext)
 
-    return plaintext, nil
+    return plaintext[:len(ciphertext)], nil
 }
 
 func pad(src []byte, blockSize int) []byte {
@@ -66,6 +67,14 @@ func pad(src []byte, blockSize int) []byte {
     }
     padtext := bytes.Repeat([]byte{byte(padding)}, padding)
     return append(src, padtext...)
+}
+
+func extend(src []byte, blockSize int) []byte {
+    padding := blockSize - len(src) % blockSize
+    if padding == blockSize {
+        padding = 0
+    }
+    return src[:len(src) + padding]
 }
 
 func encryptAsPage(plaintext []byte, key []byte, iv []byte) ([]byte, error) {
