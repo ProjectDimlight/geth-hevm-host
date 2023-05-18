@@ -81,7 +81,8 @@ const (
     ECP_ENV              = 5
     ECP_STACK            = 6
     ECP_HOST             = 7
-    ECP_RETURN_DATA      = 8
+    ECP_OCM_RETURNDATA   = 8
+    ECP_OCM_MEM          = 9
 )
 
 // Config are the configuration options for the Interpreter
@@ -275,14 +276,15 @@ func (in *EVMInterpreter) sliceMemory(callContext *ScopeContext, offset uint32, 
     var (
         res       = make([]byte, 0, 65536)
         memLen    = uint32(callContext.Memory.Len())
+        totLen    = 0
     )
 
     // get encrypted slice
     in.net.bufOut = in.net.bufOut[:0]
-    in.net.bufOut = append(in.net.bufOut, ECP_ICM)
-    in.net.bufOut = append(in.net.bufOut, ECP_HOST)
-    in.net.bufOut = append(in.net.bufOut, ECP_MEM)
-    in.net.bufOut = append(in.net.bufOut, ICM_SLICE)
+    in.net.bufOut = append(in.net.bufOut, ECP_COPY)
+    in.net.bufOut = append(in.net.bufOut, ECP_OCM_MEM)
+    in.net.bufOut = append(in.net.bufOut, ECP_OCM_RETURNDATA)
+    in.net.bufOut = append(in.net.bufOut, 0)
     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, offset)
     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, size)
@@ -299,7 +301,7 @@ func (in *EVMInterpreter) sliceMemory(callContext *ScopeContext, offset uint32, 
         bufIn := in.net.bufIn
 
         opcode := bufIn[0]
-        // src := bufIn[1]
+        src := bufIn[1]
         // bufIn[2] should always be HOST
         funccode := bufIn[3] // call mode
 
@@ -308,29 +310,28 @@ func (in *EVMInterpreter) sliceMemory(callContext *ScopeContext, offset uint32, 
         // length := binary.LittleEndian.Uint32(bufIn[12:16])
 
         // op
-        if opcode != ECP_ICM {
-            continue
+        if src == ECP_OCM_RETURN_DATA {
+            res = append(res, bufIn[16:n]...)
+            totLen += n - 16
+            if totLen >= size {
+                break
+            }
         }
         
-        res = append(res, bufIn[16:n]...)
-        
-        if funccode == ICM_SWAP {
+        if opcode == ECP_SWAP {
             // reply: the next page
             pageHead := destOffset
             pageSize := MinOf(0x400, memLen - pageHead)
             in.net.bufOut = in.net.bufOut[:0]
-            in.net.bufOut = append(in.net.bufOut, ECP_ICM)
+            in.net.bufOut = append(in.net.bufOut, ECP_COPY)
             in.net.bufOut = append(in.net.bufOut, ECP_HOST)
-            in.net.bufOut = append(in.net.bufOut, ECP_MEM)
-            in.net.bufOut = append(in.net.bufOut, ICM_COPY)
+            in.net.bufOut = append(in.net.bufOut, ECP_OCM_MEM)
+            in.net.bufOut = append(in.net.bufOut, 0)
             in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, offset)
             in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, pageHead)
             in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, pageSize)
             in.net.bufOut = append(in.net.bufOut, callContext.Memory.store[pageHead: pageHead + pageSize]...)
             in.net.conn.Write(in.net.bufOut)
-        } else if funccode == ICM_COPY {
-            // end
-            break
         }
     }
     return res
