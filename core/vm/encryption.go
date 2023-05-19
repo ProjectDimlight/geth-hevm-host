@@ -32,35 +32,35 @@ func initKey(mod []byte, exp []byte, p []byte, q []byte, d []byte) (*rsa.Private
 }
 */
 
-func encrypt(plaintext []byte, key []byte, iv []byte) ([]byte, error) {
+func Encrypt(plaintext []byte, key []byte, iv []byte) ([]byte, error) {
     block, err := aes.NewCipher(key)
     if err != nil {
         return nil, err
     }
 
     mode := cipher.NewCBCEncrypter(block, iv)
-    paddedPlaintext := pad(plaintext, block.BlockSize())
+    paddedPlaintext := Pad(plaintext, block.BlockSize())
     ciphertext := make([]byte, len(paddedPlaintext))
     mode.CryptBlocks(ciphertext, paddedPlaintext)
 
     return ciphertext, nil
 }
 
-func decrypt(ciphertext []byte, key []byte, iv []byte) ([]byte, error) {
+func Decrypt(ciphertext []byte, key []byte, iv []byte) ([]byte, error) {
     block, err := aes.NewCipher(key)
     if err != nil {
         return nil, err
     }
 
     mode := cipher.NewCBCDecrypter(block, iv)
-    extendedCiphertext := extend(ciphertext, block.BlockSize())
+    extendedCiphertext := Extend(ciphertext, block.BlockSize())
     plaintext := make([]byte, len(extendedCiphertext))
     mode.CryptBlocks(plaintext, extendedCiphertext)
 
     return plaintext[:len(ciphertext)], nil
 }
 
-func pad(src []byte, blockSize int) []byte {
+func Pad(src []byte, blockSize int) []byte {
     padding := blockSize - len(src) % blockSize
     if padding == blockSize {
         padding = 0
@@ -69,7 +69,7 @@ func pad(src []byte, blockSize int) []byte {
     return append(src, padtext...)
 }
 
-func extend(src []byte, blockSize int) []byte {
+func Extend(src []byte, blockSize int) []byte {
     padding := blockSize - len(src) % blockSize
     if padding == blockSize {
         padding = 0
@@ -77,11 +77,11 @@ func extend(src []byte, blockSize int) []byte {
     return src[:len(src) + padding]
 }
 
-func encryptAsPage(plaintext []byte, key []byte, iv []byte) ([]byte, error) {
+func EncryptAsPage(plaintext []byte, key []byte, iv []byte) ([]byte, error) {
     var tmp = make([]byte, 0, 65536)
     for len(plaintext) > 0 {
         l := MinOf(1024, uint32(len(plaintext)))
-        res, err := encrypt(plaintext[0:l], key, iv)
+        res, err := Encrypt(plaintext[0:l], key, iv)
         if err != nil {
             return nil, err
         }
@@ -91,11 +91,11 @@ func encryptAsPage(plaintext []byte, key []byte, iv []byte) ([]byte, error) {
     return tmp, nil
 }
 
-func decryptAsPage(ciphertext []byte, key []byte, iv []byte) ([]byte, error) {
+func DecryptAsPage(ciphertext []byte, key []byte, iv []byte) ([]byte, error) {
     var tmp = make([]byte, 0, 65536)
     for len(ciphertext) > 0 {
         l := MinOf(1024, uint32(len(ciphertext)))
-        res, err := decrypt(ciphertext[0:l], key, iv)
+        res, err := Decrypt(ciphertext[0:l], key, iv)
         if err != nil {
             return nil, err
         }

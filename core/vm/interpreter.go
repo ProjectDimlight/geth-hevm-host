@@ -17,6 +17,8 @@
 package vm
 
 import (
+    // "runtime/debug"
+
     "encoding/binary"
     "fmt"
     "hash"
@@ -150,8 +152,8 @@ func NewNetwork() *Network {
 }
 
 type KeySet struct {
-    aesKey []byte
-    aesIv  []byte
+    AesKey []byte
+    AesIv  []byte
 }
 
 var keyset *KeySet
@@ -159,8 +161,8 @@ var keyset *KeySet
 func NewKeySet() *KeySet {
     if keyset == nil {
         keyset = &KeySet{
-            aesKey: []byte{0x20, 0xf5, 0x92, 0xa6, 0xd8, 0x1a, 0x35, 0x4d, 0x04, 0xf9, 0x15, 0xcd, 0xba, 0x1e, 0xdd, 0xe6},
-            aesIv:  make([]byte, 16, 16),
+            AesKey: []byte{0x20, 0xf5, 0x92, 0xa6, 0xd8, 0x1a, 0x35, 0x4d, 0x04, 0xf9, 0x15, 0xcd, 0xba, 0x1e, 0xdd, 0xe6},
+            AesIv:  make([]byte, 16, 16),
         }
     }
     return keyset
@@ -352,7 +354,11 @@ func (in *EVMInterpreter) sliceMemory(callContext *ScopeContext, offset uint32, 
 }
 
 func (in *EVMInterpreter) setMemory(callContext *ScopeContext, offset uint32, size uint32, content []byte) {
-    content = extend(content, 16)
+    if size == 0 {
+        return
+    }
+
+    content = Extend(content, 16)
 
     var (
         memLen    = uint32(callContext.Memory.Len())
@@ -456,7 +462,7 @@ func (in *EVMInterpreter) setMemory(callContext *ScopeContext, offset uint32, si
     }
 }
 
-func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc uint64, msize uint64, resume byte) {
+func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc uint64, msize uint64, resume byte, stackPlain uint32) {
     contract := callContext.Contract
     in.net.bufOut = in.net.bufOut[:0]
 
@@ -467,7 +473,7 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
     in.net.bufOut = append(in.net.bufOut, ECP_COPY)
     in.net.bufOut = append(in.net.bufOut, ECP_HOST)
     in.net.bufOut = append(in.net.bufOut, ECP_STACK)
-    in.net.bufOut = append(in.net.bufOut, resume)
+    in.net.bufOut = append(in.net.bufOut, 0)
     // src offset, dest offset, length
     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
@@ -477,23 +483,29 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
     if callContext.Stack.len() != 0 {
         // flip the stack to send it in the reversed order
         flipStack(callContext.Stack)
-        flag := 1
+
         count := 0
-        for callContext.Stack.len() != 0 {
+        for uint32(callContext.Stack.len()) > stackPlain {
             in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, callContext.Stack.peek().Bytes())
             callContext.Stack.pop()
-
             count += 1
-            if callContext.Stack.len() == 0 {
-                in.net.bufOut[3] = (byte)(flag)
-                binary.LittleEndian.PutUint32(in.net.bufOut[12:16], 4+(uint32)(count)*32)
-                binary.LittleEndian.PutUint32(in.net.bufOut[16:20], (uint32)(count))
-                in.net.conn.Write(in.net.bufOut)
-
-                flag = 0
-                count = 0
-            }
         }
+        in.net.bufOut[3] = (byte)(1)
+        binary.LittleEndian.PutUint32(in.net.bufOut[12:16], 4+(uint32)(count)*32)
+        binary.LittleEndian.PutUint32(in.net.bufOut[16:20], (uint32)(count))
+        in.net.conn.Write(in.net.bufOut)
+
+        count = 0
+        in.net.bufOut = in.net.bufOut[:20]
+        for callContext.Stack.len() > 0 {
+            in.net.bufOut = append256FromBigEndianBytes(in.net.bufOut, callContext.Stack.peek().Bytes())
+            callContext.Stack.pop()
+            count += 1
+        }
+        in.net.bufOut[3] = (byte)(0)
+        binary.LittleEndian.PutUint32(in.net.bufOut[12:16], 4+(uint32)(count)*32)
+        binary.LittleEndian.PutUint32(in.net.bufOut[16:20], (uint32)(count))
+        in.net.conn.Write(in.net.bufOut)
     } else {
         in.net.bufOut[3] = (byte)(1)
         binary.LittleEndian.PutUint32(in.net.bufOut[12:16], 4)
@@ -564,7 +576,7 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
     in.net.bufOut = append(in.net.bufOut, ECP_CALL)
     in.net.bufOut = append(in.net.bufOut, ECP_HOST)
     in.net.bufOut = append(in.net.bufOut, ECP_CONTROL)
-    in.net.bufOut = append(in.net.bufOut, 0)
+    in.net.bufOut = append(in.net.bufOut, resume)
 
     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
@@ -583,6 +595,8 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
 // considered a revert-and-consume-all-gas operation except for
 // ErrExecutionReverted which means revert-and-keep-gas-left.
 func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (ret []byte, err error) {
+    // debug.PrintStack()
+    
     // stop hevm
     // this should not be required when hevm is correct
     in.net.bufOut = in.net.bufOut[:0]
@@ -645,20 +659,20 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 
     fmt.Println("gas input:", contract.Gas)
 
-    contract.Input = input
-    printHex(contract.Code)
-    printHex(input)
+    contract.Input = Extend(input, 16)
+    encryptedCode := contract.Code
+    encryptedInput := contract.Input
 
-    encryptedCode,  _ := encryptAsPage(contract.Code, in.key.aesKey, in.key.aesIv)
-    encryptedInput, _ := encryptAsPage(input, in.key.aesKey, in.key.aesIv)
+    decryptedCode,  _ := DecryptAsPage(contract.Code, in.key.AesKey, in.key.AesIv)
+    decryptedInput, _ := DecryptAsPage(input, in.key.AesKey, in.key.AesIv)
 
-    printHex(encryptedCode)
-    printHex(encryptedInput)
+    printHex(decryptedCode)
+    printHex(decryptedInput)
 
     HEVMstart := time.Now()
 
     // Send request to HEVM
-    in.loadContextToHardware(callContext, pc, msize, 0)
+    in.loadContextToHardware(callContext, pc, msize, 0, 0)
 
     // Main loop
     // Deal with incoming requests
@@ -881,7 +895,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 
             pc = binary.LittleEndian.Uint64(bufIn[16:24])
             msize = binary.LittleEndian.Uint64(bufIn[24:32])
-            contract.Gas = binary.LittleEndian.Uint64(bufIn[32:40])
+            // contract.Gas = binary.LittleEndian.Uint64(bufIn[32:40])
 
             HEVMend := time.Since(HEVMstart)
             fmt.Printf("HEVM use %s\n", HEVMend)
@@ -921,9 +935,8 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 
             pc = binary.LittleEndian.Uint64(bufIn[16:24])
             msize = binary.LittleEndian.Uint64(bufIn[24:32])
-            contract.Gas = binary.LittleEndian.Uint64(bufIn[32:40])
+            // contract.Gas = binary.LittleEndian.Uint64(bufIn[32:40])
 
-            fmt.Println("call")
             fmt.Println("pc before call: ", pc)
 
             // callGasTemp should be the call gas param in the stack
@@ -931,16 +944,22 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 
             var err error = nil
             if funccode == ECP_CALL_CREATE {
+                fmt.Println("Create")
                 res, err = opCreate(&pc, in, callContext)
             } else if funccode == ECP_CALL_CALL {
+                fmt.Println("Call")
                 res, err = opCall(&pc, in, callContext)
             } else if funccode == ECP_CALL_CALLCODE {
+                fmt.Println("CallCode")
                 res, err = opCallCode(&pc, in, callContext)
             } else if funccode == ECP_CALL_DELEGATECALL {
+                fmt.Println("DelegateCall")
                 res, err = opDelegateCall(&pc, in, callContext)
             } else if funccode == ECP_CALL_CREATE2 {
+                fmt.Println("Create2")
                 res, err = opCreate2(&pc, in, callContext)
             } else if funccode == ECP_CALL_STATICCALL {
+                fmt.Println("StaticCall")
                 res, err = opStaticCall(&pc, in, callContext)
             }
 
@@ -951,7 +970,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 
             // TODO: recover stack, mem, env
             // and resume
-            in.loadContextToHardware(callContext, pc, msize, 1)
+            in.loadContextToHardware(callContext, pc, msize, 1, 1)
 
         } else if opcode == ECP_DEBUG {
             gas := binary.LittleEndian.Uint64(bufIn[16:24])
@@ -965,7 +984,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 
     // debug print return value
     if res != nil {
-        resPlain, _ := decryptAsPage(res, in.key.aesKey, in.key.aesIv)
+        resPlain, _ := DecryptAsPage(res, in.key.AesKey, in.key.AesIv)
         printHex(resPlain)
     }
     
@@ -1016,13 +1035,14 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
         num_of_items := binary.LittleEndian.Uint32(bufIn[16:20])
         storageBase := uint32(20)
 
-		decryptedStorage, _ := decrypt(bufIn[storageBase:n], in.key.aesKey, in.key.aesIv)
+		decryptedStorage, _ := Decrypt(bufIn[storageBase:n], in.key.AesKey, in.key.AesIv)
 
         for i := uint32(0); i < num_of_items; i += 1 {
             offset := i * 84
             key := common.BytesToHash(decryptedStorage[offset : offset+32])
             value := common.BytesToHash(decryptedStorage[offset+32 : offset+64])
-            fmt.Println(key, ":", value)
+            addr := common.BytesToHash(decryptedStorage[offset+64 : offset+84])
+            fmt.Println(addr, ".", key, ":", value)
             in.evm.StateDB.SetState(contract.Address(), key, value)
         }
         break

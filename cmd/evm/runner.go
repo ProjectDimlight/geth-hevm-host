@@ -254,19 +254,24 @@ func runCmd(ctx *cli.Context) error {
 	}
 	input := common.FromHex(string(hexInput))
 
+	keyset := vm.NewKeySet()
 	var execFunc func() ([]byte, uint64, error)
 	if ctx.Bool(CreateFlag.Name) {
 		input = append(code, input...)
+		encryptedInput,  _ := vm.EncryptAsPage(input, keyset.AesKey, keyset.AesIv)
+
 		execFunc = func() ([]byte, uint64, error) {
-			output, _, gasLeft, err := runtime.Create(input, &runtimeConfig)
+			output, _, gasLeft, err := runtime.Create(encryptedInput, &runtimeConfig)
 			return output, gasLeft, err
 		}
 	} else {
 		if len(code) > 0 {
-			statedb.SetCode(receiver, code)
+			encryptedCode,  _ := vm.EncryptAsPage(code, keyset.AesKey, keyset.AesIv)
+			statedb.SetCode(receiver, encryptedCode)
 		}
+		encryptedInput,  _ := vm.EncryptAsPage(input, keyset.AesKey, keyset.AesIv)
 		execFunc = func() ([]byte, uint64, error) {
-			return runtime.Call(receiver, input, &runtimeConfig)
+			return runtime.Call(receiver, encryptedInput, &runtimeConfig)
 		}
 	}
 

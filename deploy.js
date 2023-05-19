@@ -15,6 +15,6 @@ contract = abi.new(deploy)
 // inst = abi.at(contract.address)
 
 
-contract.set.sendTransaction(0x114514, {from: eth.coinbase})
+contract.set.sendTransaction(0x1919810, {from: eth.coinbase})
 
 contract.get.sendTransaction({from: eth.coinbase})

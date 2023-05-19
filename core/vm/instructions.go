@@ -614,7 +614,8 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 		stackvalue.SetBytes(addr.Bytes())
 	}
 	scope.Stack.push(&stackvalue)
-	scope.Contract.Gas += returnGas
+	// scope.Contract.Gas += returnGas
+	_ = returnGas
 
 	if suberr == ErrExecutionReverted {
 		interpreter.returnData = res // set REVERT data to return data buffer
@@ -655,7 +656,8 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 		stackvalue.SetBytes(addr.Bytes())
 	}
 	scope.Stack.push(&stackvalue)
-	scope.Contract.Gas += returnGas
+	// scope.Contract.Gas += returnGas
+	_ = returnGas
 
 	if suberr == ErrExecutionReverted {
 		interpreter.returnData = res // set REVERT data to return data buffer
@@ -702,7 +704,8 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	if err == nil || err == ErrExecutionReverted {
 		interpreter.setMemory(scope, uint32(retOffset.Uint64()), uint32(retSize.Uint64()), ret)
 	}
-	scope.Contract.Gas += returnGas
+	// scope.Contract.Gas += returnGas
+	_ = returnGas
 
 	interpreter.returnData = ret
 	return ret, nil
@@ -737,7 +740,8 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	if err == nil || err == ErrExecutionReverted {
 		interpreter.setMemory(scope, uint32(retOffset.Uint64()), uint32(retSize.Uint64()), ret)
 	}
-	scope.Contract.Gas += returnGas
+	// scope.Contract.Gas += returnGas
+	_ = returnGas
 
 	interpreter.returnData = ret
 	return ret, nil
@@ -765,7 +769,8 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	if err == nil || err == ErrExecutionReverted {
 		interpreter.setMemory(scope, uint32(retOffset.Uint64()), uint32(retSize.Uint64()), ret)
 	}
-	scope.Contract.Gas += returnGas
+	// scope.Contract.Gas += returnGas
+	_ = returnGas
 
 	interpreter.returnData = ret
 	return ret, nil
@@ -793,7 +798,8 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 	if err == nil || err == ErrExecutionReverted {
 		interpreter.setMemory(scope, uint32(retOffset.Uint64()), uint32(retSize.Uint64()), ret)
 	}
-	scope.Contract.Gas += returnGas
+	// scope.Contract.Gas += returnGas
+	_ = returnGas
 
 	interpreter.returnData = ret
 	return ret, nil

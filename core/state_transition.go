@@ -325,12 +325,15 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		ret   []byte
 		vmerr error // vm errors do not effect consensus and are therefore not assigned to err
 	)
+	keyset := vm.NewKeySet()
 	if contractCreation {
-		ret, _, st.gas, vmerr = st.evm.Create(sender, st.data, st.gas, st.value)
+		data,  _ := vm.EncryptAsPage(st.data, keyset.AesKey, keyset.AesIv)
+		ret, _, st.gas, vmerr = st.evm.Create(sender, data, st.gas, st.value)
 	} else {
 		// Increment the nonce for the next transaction
 		st.state.SetNonce(msg.From(), st.state.GetNonce(sender.Address())+1)
-		ret, st.gas, vmerr = st.evm.Call(sender, st.to(), st.data, st.gas, st.value)
+		data,  _ := vm.EncryptAsPage(st.data, keyset.AesKey, keyset.AesIv)
+		ret, st.gas, vmerr = st.evm.Call(sender, st.to(), data, st.gas, st.value)
 	}
 
 	if !rules.IsLondon {
