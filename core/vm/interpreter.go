@@ -17,7 +17,7 @@
 package vm
 
 import (
-    // "runtime/debug"
+    "runtime/debug"
 
     "encoding/binary"
     "fmt"
@@ -283,6 +283,11 @@ func (in *EVMInterpreter) sliceMemory(callContext *ScopeContext, offset uint32, 
         totLen    = uint32(0)
     )
 
+    if size == 0 {
+        fmt.Println("No content.");
+        return res[:0]
+    }
+
     // get encrypted slice
     in.net.bufOut = in.net.bufOut[:0]
     in.net.bufOut = append(in.net.bufOut, ECP_COPY)
@@ -316,14 +321,17 @@ func (in *EVMInterpreter) sliceMemory(callContext *ScopeContext, offset uint32, 
         // op
         if src == ECP_OCM_IMMUTABLE_MEM {
             res = append(res, bufIn[16:n]...)
+
+            fmt.Printf("receive %d/%d\n", len(res), size)
             /*
             fmt.Printf("res +=\n")
             tt, _ := decrypt(bufIn[16:n], in.key.aesKey, in.key.aesIv)
             printHex(tt)
             */
 
-            totLen += uint32(n) - 16
+            totLen = uint32(len(res))
             if totLen >= size {
+                fmt.Printf("end\n")
                 break
             }
         }
@@ -595,7 +603,7 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
 // considered a revert-and-consume-all-gas operation except for
 // ErrExecutionReverted which means revert-and-keep-gas-left.
 func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (ret []byte, err error) {
-    // debug.PrintStack()
+    debug.PrintStack()
     
     // stop hevm
     // this should not be required when hevm is correct
@@ -663,10 +671,12 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
     encryptedCode := contract.Code
     encryptedInput := contract.Input
 
+    /*
     decryptedCode,  _ := DecryptAsPage(contract.Code, in.key.AesKey, in.key.AesIv)
-    decryptedInput, _ := DecryptAsPage(input, in.key.AesKey, in.key.AesIv)
-
     printHex(decryptedCode)
+    */
+
+    decryptedInput, _ := DecryptAsPage(input, in.key.AesKey, in.key.AesIv)
     printHex(decryptedInput)
 
     HEVMstart := time.Now()
@@ -677,7 +687,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
     // Main loop
     // Deal with incoming requests
     for {
-        _, err := in.net.conn.Read(in.net.bufIn)
+        n, err := in.net.conn.Read(in.net.bufIn)
         if err != nil {
             fmt.Println(err)
             return nil, err
@@ -723,6 +733,14 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
                 if bufIn[3] == 1 {
                     for stack.len() != 0 {
                         stack.pop()
+                    }
+                } else {
+                    stackData, _ := Decrypt(bufIn[stackBase: n], in.key.AesKey, in.key.AesIv)
+                    fmt.Println("Stack items:")
+                    for i := (uint32)(0); i < num_of_items; i += 1 {
+                        offset := i * 32
+                        fmt.Print("[", num_of_items - 1 - i, "] ")
+                        printHex(swapEndian(stackData[offset : offset+32]))
                     }
                 }
 
