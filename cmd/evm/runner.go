@@ -259,6 +259,7 @@ func runCmd(ctx *cli.Context) error {
 	if ctx.Bool(CreateFlag.Name) {
 		input = append(code, input...)
 		encryptedInput,  _ := vm.EncryptAsPage(input, keyset.AesKey, keyset.AesIv)
+		encryptedInput = vm.Extend(encryptedInput, 16)
 
 		execFunc = func() ([]byte, uint64, error) {
 			output, _, gasLeft, err := runtime.Create(encryptedInput, &runtimeConfig)
@@ -267,6 +268,7 @@ func runCmd(ctx *cli.Context) error {
 	} else {
 		if len(code) > 0 {
 			encryptedCode,  _ := vm.EncryptAsPage(code, keyset.AesKey, keyset.AesIv)
+			encryptedCode = vm.Extend(encryptedCode, 16)
 			statedb.SetCode(receiver, encryptedCode)
 		}
 		encryptedInput,  _ := vm.EncryptAsPage(input, keyset.AesKey, keyset.AesIv)

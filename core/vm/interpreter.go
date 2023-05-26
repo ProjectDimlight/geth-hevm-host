@@ -17,7 +17,7 @@
 package vm
 
 import (
-    "runtime/debug"
+    // "runtime/debug"
 
     "encoding/binary"
     "fmt"
@@ -280,7 +280,6 @@ func (in *EVMInterpreter) sliceMemory(callContext *ScopeContext, offset uint32, 
     var (
         res       = make([]byte, 0, 65536)
         memLen    = uint32(callContext.Memory.Len())
-        totLen    = uint32(0)
     )
 
     if size == 0 {
@@ -306,6 +305,7 @@ func (in *EVMInterpreter) sliceMemory(callContext *ScopeContext, offset uint32, 
             fmt.Println(err)
             return nil
         }
+        xulu.Use(n)
 
         bufIn := in.net.bufIn
 
@@ -314,13 +314,13 @@ func (in *EVMInterpreter) sliceMemory(callContext *ScopeContext, offset uint32, 
         // bufIn[2] should always be HOST
         // funccode := bufIn[3]
 
-        // srcOffset := binary.LittleEndian.Uint32(bufIn[4:8])
+        srcOffset := binary.LittleEndian.Uint32(bufIn[4:8])
         destOffset := binary.LittleEndian.Uint32(bufIn[8:12])
-        // length := binary.LittleEndian.Uint32(bufIn[12:16])
+        length := binary.LittleEndian.Uint32(bufIn[12:16])
 
         // op
         if src == ECP_OCM_IMMUTABLE_MEM {
-            res = append(res, bufIn[16:n]...)
+            res = append(res, Extend(bufIn[16:16 + length], 16)...)
 
             fmt.Printf("receive %d/%d\n", len(res), size)
             /*
@@ -329,8 +329,7 @@ func (in *EVMInterpreter) sliceMemory(callContext *ScopeContext, offset uint32, 
             printHex(tt)
             */
 
-            totLen = uint32(len(res))
-            if totLen >= size {
+            if srcOffset + length >= size {
                 fmt.Printf("end\n")
                 break
             }
@@ -390,25 +389,26 @@ func (in *EVMInterpreter) setMemory(callContext *ScopeContext, offset uint32, si
             fmt.Println(err)
             return
         }
+        xulu.Use(n)
 
         bufIn := in.net.bufIn
 
         opcode := bufIn[0]
         src := bufIn[1]
         // bufIn[2] should always be HOST
-        // funccode := bufIn[3]
+        funccode := bufIn[3]
 
         srcOffset := binary.LittleEndian.Uint32(bufIn[4:8])
         destOffset := binary.LittleEndian.Uint32(bufIn[8:12])
         length := binary.LittleEndian.Uint32(bufIn[12:16])
 
         // op
-        if src == ECP_OCM_MEM && n > 16 {
-            if srcOffset+length > uint32(callContext.Memory.Len()) {
+        if src == ECP_OCM_MEM && funccode == 1 {
+            if srcOffset + length > uint32(callContext.Memory.Len()) {
                 callContext.Memory.Resize(uint64(srcOffset + length))
             }
             (*callContext.MemTags)[srcOffset >> 10] = true
-            copy(callContext.Memory.store[srcOffset:], bufIn[16:n])
+            copy(callContext.Memory.store[srcOffset:], bufIn[16:16 + length])
 
             /*
             fmt.Printf("new mem [%d]:\n", srcOffset)
@@ -603,7 +603,7 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
 // considered a revert-and-consume-all-gas operation except for
 // ErrExecutionReverted which means revert-and-keep-gas-left.
 func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (ret []byte, err error) {
-    debug.PrintStack()
+    // debug.PrintStack()
     
     // stop hevm
     // this should not be required when hevm is correct
@@ -666,15 +666,10 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
     }()
 
     fmt.Println("gas input:", contract.Gas)
+    contract.Input = input
 
-    contract.Input = Extend(input, 16)
-    encryptedCode := contract.Code
-    encryptedInput := contract.Input
-
-    /*
-    decryptedCode,  _ := DecryptAsPage(contract.Code, in.key.AesKey, in.key.AesIv)
-    printHex(decryptedCode)
-    */
+    // decryptedCode,  _ := DecryptAsPage(contract.Code, in.key.AesKey, in.key.AesIv)
+    // printHex(decryptedCode)
 
     decryptedInput, _ := DecryptAsPage(input, in.key.AesKey, in.key.AesIv)
     printHex(decryptedInput)
@@ -834,13 +829,13 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
                     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, destOffset)
 
                     var codeLength uint32
-                    if destOffset >= uint32(binary.Size(encryptedCode)) {
+                    if destOffset >= uint32(binary.Size(contract.Code)) {
                         codeLength = 0
                     } else {
-                        codeLength = MinOf(1024, uint32(binary.Size(encryptedCode) - int(destOffset)))
+                        codeLength = MinOf(1024, uint32(binary.Size(contract.Code) - int(destOffset)))
                     }
                     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, codeLength)
-                    in.net.bufOut = append(in.net.bufOut, encryptedCode[destOffset:destOffset + codeLength]...)
+                    in.net.bufOut = append(in.net.bufOut, Extend(contract.Code[destOffset:destOffset + codeLength], 16)...)
                     in.net.conn.Write(in.net.bufOut)
                 } else if src == ECP_CALLDATA {
                     in.net.bufOut = in.net.bufOut[:0]
@@ -852,13 +847,31 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
                     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, destOffset)
 
                     var inputLength uint32
-                    if destOffset >= uint32(binary.Size(encryptedInput)) {
+                    if destOffset >= uint32(binary.Size(contract.Input)) {
                         inputLength = 0
                     } else {
-                        inputLength = MinOf(1024, uint32(binary.Size(encryptedInput) - int(destOffset)))
+                        inputLength = MinOf(1024, uint32(binary.Size(contract.Input) - int(destOffset)))
                     }
                     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, inputLength)
-                    in.net.bufOut = append(in.net.bufOut, encryptedInput[destOffset:destOffset + inputLength]...)
+                    in.net.bufOut = append(in.net.bufOut, Extend(contract.Input[destOffset:destOffset + inputLength], 16)...)
+                    in.net.conn.Write(in.net.bufOut)
+                } else if src == ECP_OCM_IMMUTABLE_MEM {
+                    in.net.bufOut = in.net.bufOut[:0]
+                    in.net.bufOut = append(in.net.bufOut, ECP_COPY)
+                    in.net.bufOut = append(in.net.bufOut, ECP_HOST)
+                    in.net.bufOut = append(in.net.bufOut, ECP_OCM_IMMUTABLE_MEM)
+                    in.net.bufOut = append(in.net.bufOut, 0)
+                    in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+                    in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, destOffset)
+
+                    var retdataLength uint32
+                    if destOffset >= uint32(binary.Size(in.returnData)) {
+                        retdataLength = 0
+                    } else {
+                        retdataLength = MinOf(1024, uint32(binary.Size(in.returnData) - int(destOffset)))
+                    }
+                    in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, retdataLength)
+                    in.net.bufOut = append(in.net.bufOut, Extend(in.returnData[destOffset:destOffset + retdataLength], 16)...)
                     in.net.conn.Write(in.net.bufOut)
                 }
             }
@@ -870,16 +883,17 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
             address := common.BytesToAddress(swapEndian(param[0:20]))
 
             if funccode == ECP_QUERY_EXTCODECOPY {
+                in.setMemory(callContext, destOffset, length, in.evm.StateDB.GetCode(address)[srcOffset: srcOffset + length])
+
                 in.net.bufOut = in.net.bufOut[:0]
                 in.net.bufOut = append(in.net.bufOut, ECP_COPY)
                 in.net.bufOut = append(in.net.bufOut, ECP_HOST)
-                in.net.bufOut = append(in.net.bufOut, ECP_MEM)
+                in.net.bufOut = append(in.net.bufOut, ECP_ENV)
                 in.net.bufOut = append(in.net.bufOut, 0)
 
-                in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, srcOffset)
-                in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, destOffset)
-                in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, length)
-                in.net.bufOut = append(in.net.bufOut, in.evm.StateDB.GetCodeHash(contract.Address()).Bytes()...)
+                in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+                in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+                in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
                 in.net.conn.Write(in.net.bufOut)
             } else {
                 in.net.bufOut = in.net.bufOut[:0]

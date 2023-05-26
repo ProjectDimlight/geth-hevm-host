@@ -329,6 +329,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	if contractCreation {
 		data,  _ := vm.EncryptAsPage(st.data, keyset.AesKey, keyset.AesIv)
 		ret, _, st.gas, vmerr = st.evm.Create(sender, data, st.gas, st.value)
+		ret = vm.Extend(ret, 16)
 	} else {
 		// Increment the nonce for the next transaction
 		st.state.SetNonce(msg.From(), st.state.GetNonce(sender.Address())+1)

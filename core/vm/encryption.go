@@ -79,6 +79,7 @@ func Extend(src []byte, blockSize int) []byte {
 
 func EncryptAsPage(plaintext []byte, key []byte, iv []byte) ([]byte, error) {
     var tmp = make([]byte, 0, 65536)
+    n := len(plaintext)
     for len(plaintext) > 0 {
         l := MinOf(1024, uint32(len(plaintext)))
         res, err := Encrypt(plaintext[0:l], key, iv)
@@ -88,7 +89,7 @@ func EncryptAsPage(plaintext []byte, key []byte, iv []byte) ([]byte, error) {
         tmp = append(tmp, res...)
         plaintext = plaintext[l:]
     }
-    return tmp, nil
+    return tmp[:n], nil
 }
 
 func DecryptAsPage(ciphertext []byte, key []byte, iv []byte) ([]byte, error) {
