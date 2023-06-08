@@ -69,9 +69,8 @@ const (
 )
 
 const (
-    ICM_SLICE byte = 1
-    ICM_COPY       = 2
-    ICM_SWAP       = 3
+    ICM_CLEAR_STORAGE byte = 1
+    ICM_SET_USER_PUB       = 2
 )
 
 const (
@@ -86,6 +85,10 @@ const (
     ECP_RETURNDATA       = 8
     ECP_OCM_MEM          = 9
     ECP_OCM_IMMUTABLE_MEM= 10
+)
+
+const (
+    SIGNATURE_LENGTH int = 56
 )
 
 // Config are the configuration options for the Interpreter
@@ -104,7 +107,7 @@ type Config struct {
 // but not transients like pc and gas
 type ScopeContext struct {
     Memory   *Memory
-    MemTags  *map[uint32]bool
+    MemTags  *map[uint32] []byte
     Stack    *Stack
     Contract *Contract
 }
@@ -152,17 +155,23 @@ func NewNetwork() *Network {
 }
 
 type KeySet struct {
-    AesKey []byte
-    AesIv  []byte
+    AesKey      []byte
+    AesIv       []byte
+    UserPriv    ecdsa.PrivateKey
+    UserPub     ecdsa.PublicKey
 }
 
 var keyset *KeySet
 
 func NewKeySet() *KeySet {
     if keyset == nil {
+        upriv, upub := GenerateECDSAKey()
+
         keyset = &KeySet{
             AesKey: []byte{0x20, 0xf5, 0x92, 0xa6, 0xd8, 0x1a, 0x35, 0x4d, 0x04, 0xf9, 0x15, 0xcd, 0xba, 0x1e, 0xdd, 0xe6},
             AesIv:  make([]byte, 16, 16),
+            UserPriv: upriv,
+            UserPub: upub,
         }
     }
     return keyset
@@ -407,7 +416,11 @@ func (in *EVMInterpreter) setMemory(callContext *ScopeContext, offset uint32, si
             if srcOffset + length > uint32(callContext.Memory.Len()) {
                 callContext.Memory.Resize(uint64(srcOffset + length))
             }
-            (*callContext.MemTags)[srcOffset >> 10] = true
+            _, valid = (*callContext.MemTags)[srcOffset >> 10]
+            if !valid {
+                (*callContext.MemTags)[srcOffset >> 10] = make([]byte, SIGNATURE_LENGTH)
+            }
+            copy((*callContext.MemTags)[srcOffset >> 10], bufIn[16 + length: 16 + length + SIGNATURE_LENGTH])
             copy(callContext.Memory.store[srcOffset:], bufIn[16:16 + length])
 
             /*
@@ -426,9 +439,10 @@ func (in *EVMInterpreter) setMemory(callContext *ScopeContext, offset uint32, si
             if src == ECP_OCM_MEM {
                 pageHead := destOffset
                 pageSize := MinOf(0x400, memLen - pageHead)
-                value, ok := (*callContext.MemTags)[destOffset >> 10]
+                
+                sign, valid = (*callContext.MemTags)[srcOffset >> 10]
                 in.net.bufOut = in.net.bufOut[:0]
-                if (ok && value) {
+                if (valid) {
                     in.net.bufOut = append(in.net.bufOut, ECP_COPY)
                     in.net.bufOut = append(in.net.bufOut, ECP_HOST)
                     in.net.bufOut = append(in.net.bufOut, ECP_OCM_MEM)
@@ -437,7 +451,8 @@ func (in *EVMInterpreter) setMemory(callContext *ScopeContext, offset uint32, si
                     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, destOffset)
                     in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 1024)
                     in.net.bufOut = append(in.net.bufOut, callContext.Memory.store[pageHead: pageHead + pageSize]...)
-                } else {
+                    in.net.bufOut = append(in.net.bufOut, sign[0: SIGNATURE_LENGTH]...)
+                    } else {
                     in.net.bufOut = append(in.net.bufOut, ECP_COPY)
                     in.net.bufOut = append(in.net.bufOut, ECP_HOST)
                     in.net.bufOut = append(in.net.bufOut, ECP_OCM_MEM)
@@ -604,6 +619,19 @@ func (in *EVMInterpreter) loadContextToHardware(callContext *ScopeContext, pc ui
 // ErrExecutionReverted which means revert-and-keep-gas-left.
 func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (ret []byte, err error) {
     // debug.PrintStack()
+
+    // send out user pubkey
+    in.net.bufOut = in.net.bufOut[:0]
+    in.net.bufOut = append(in.net.bufOut, ECP_ICM)
+    in.net.bufOut = append(in.net.bufOut, ECP_HOST)
+    in.net.bufOut = append(in.net.bufOut, ECP_CONTROL)
+    in.net.bufOut = append(in.net.bufOut, ICM_SET_USER_PUB)
+    in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+    in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 0)
+    pub = ExportPublicKey(in.key.UserPub)
+    in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, len(pub))
+    in.net.bufOut = append(in.net.bufOut, pub...)
+    in.net.conn.Write(in.net.bufOut)
     
     // stop hevm
     // this should not be required when hevm is correct
@@ -641,7 +669,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
     // because the caches on the FPGA are usually small
     var (
         mem         = NewMemory() // bound memory
-        memTags     = make(map[uint32]bool)
+        memTags     = make(map[uint32] []byte)
 
         stack       = newstack()  // local stack
         callContext = &ScopeContext{
@@ -705,8 +733,12 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
                 if srcOffset+length > uint32(mem.Len()) {
                     mem.Resize(uint64(srcOffset + length))
                 }
-                memTags[srcOffset >> 10] = true
-                copy(mem.store[srcOffset:], bufIn[16:16+length])
+                _, valid = (*callContext.MemTags)[srcOffset >> 10]
+                if !valid {
+                    (*callContext.MemTags)[srcOffset >> 10] = make([]byte, SIGNATURE_LENGTH)
+                }
+                copy((*callContext.MemTags)[srcOffset >> 10], bufIn[16 + length: 16 + length + SIGNATURE_LENGTH])
+                copy(mem.store[srcOffset:], bufIn[16: 16 + length])
             } else if src == ECP_STORAGE {
                 num_of_items := binary.LittleEndian.Uint32(bufIn[16:20])
                 storageBase := uint32(20)
@@ -790,17 +822,20 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
                     if funccode == 1 {
                         if srcOffset+length > uint32(mem.Len()) {
                             mem.Resize(uint64(srcOffset + length))
+                        }_, valid = (*callContext.MemTags)[srcOffset >> 10]
+                        if !valid {
+                            (*callContext.MemTags)[srcOffset >> 10] = make([]byte, SIGNATURE_LENGTH)
                         }
-                        memTags[srcOffset >> 10] = true
-                        copy(mem.store[srcOffset:], bufIn[16:16+length])
+                        copy((*callContext.MemTags)[srcOffset >> 10], bufIn[16 + length: 16 + length + SIGNATURE_LENGTH])
+                        copy(mem.store[srcOffset:], bufIn[16: 16 + length])
                     }
                     if destOffset+length > uint32(mem.Len()) {
                         mem.Resize(uint64(destOffset + length))
                     }
 
-                    value, ok := memTags[destOffset >> 10]
+                    sign, ok := memTags[destOffset >> 10]
                     in.net.bufOut = in.net.bufOut[:0]
-                    if (ok && value) {
+                    if (ok) {
                         in.net.bufOut = append(in.net.bufOut, ECP_COPY)
                         in.net.bufOut = append(in.net.bufOut, ECP_HOST)
                         in.net.bufOut = append(in.net.bufOut, ECP_MEM)
@@ -809,6 +844,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
                         in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, destOffset)
                         in.net.bufOut = binary.LittleEndian.AppendUint32(in.net.bufOut, 1024)
                         in.net.bufOut = append(in.net.bufOut, mem.store[destOffset:destOffset+1024]...)
+                        in.net.bufOut = append(in.net.bufOut, sign[0: SIGNATURE_LENGTH]...)
                     } else {
                         in.net.bufOut = append(in.net.bufOut, ECP_COPY)
                         in.net.bufOut = append(in.net.bufOut, ECP_HOST)

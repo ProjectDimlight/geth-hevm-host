@@ -2,8 +2,11 @@ package vm
 
 import (
 	// "fmt"
-    "crypto/aes"
     "crypto/cipher"
+    "crypto/aes"
+    "crypto/ecdsa"
+    "crypto/elliptic"
+    "crypto/rand"
     "bytes"
     //"crypto/rsa"
     //"math/big"
@@ -104,4 +107,36 @@ func DecryptAsPage(ciphertext []byte, key []byte, iv []byte) ([]byte, error) {
         ciphertext = ciphertext[l:]
     }
     return tmp, nil
+}
+
+func GenerateECDSAKey() (priv *ecdsa.PrivateKey, pub *ecdsa.PublicKey) {
+    curve := elliptic.P224()
+    privateKey, _ := ecdsa.GenerateKey(curve, rand.Reader)
+    return privateKey, privateKey.Public()
+} 
+
+func ExportPublicKey(key *ecdsa.PublicKey) []byte {
+    return elliptic.Marshal(key.Curve, key.X, key.Y)
+}
+
+func Sign(data []byte, key *ecdsa.PrivateKey) ([]byte) {
+    r, s, _ := ecdsa.Sign(rand.Reader, privateKey, data)
+    signature := append(r.Bytes(), s.Bytes()...)
+    return signature
+}
+
+func SignAsPage(data []byte, key *ecdsa.PrivateKey) (map[uint32] []byte) {
+    var tmp = make(map[uint32] []byte)
+
+    n := len(plaintext)
+    cnt := 0
+    for len(plaintext) > 0 {
+        l := MinOf(1024, uint32(len(plaintext)))
+        res := Sign(data[0:l], key)
+        tmp[cnt] = make([]byte, SIGNATURE_LENGTH)
+        copy(tmp[cnt], res)
+        plaintext = plaintext[l:]
+    }
+    
+    return tmp
 }
